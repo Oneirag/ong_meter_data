@@ -11,6 +11,14 @@ from ong_utils import OngTimer
 timer = OngTimer(False)
 
 
+def combine_url(base, endpoint) -> str:
+    """Combines a base_url and an endpoint, avoiding double // that happens when base ends ad endpoint starts by / """
+    if base.endswith("/") and endpoint.startswith("/"):
+        return base + endpoint[1:]
+    else:
+        return base + endpoint
+
+
 class MeteringDevice(object):
 
     def __init__(self, name, base_url, circuits: tuple, usr="", pwd=""):
@@ -56,7 +64,7 @@ class MeteringDevice(object):
         self.data = values
         timer.toc("processing answer")
         self.timestamp_ns = time.time_ns()
-        logger.debug("Leido " + self.name)
+        logger.debug("Leido " + self.name + " from url " + self.url)
         logger.debug(body)
         logger.debug(self.data)
 
@@ -116,7 +124,7 @@ class MeteringDevice(object):
                 self.logon()
                 continue
             else:
-                logger.debug(f"Data read_url OK for {self.name}")
+                logger.debug(f"Data read_url OK for {self.name} in url {self.url}")
                 return response
         logger.info(f"Could not read data in read_url for {self.name} in url {self.url}")
         return  # Tried max_retries and no luck
@@ -129,7 +137,7 @@ class MirubeeDevice(MeteringDevice):
 
     def __init__(self, name, base_url, circuits: tuple, usr="", pwd=""):
         super().__init__(name, base_url, circuits, usr, pwd)
-        self.url = self.base_url + "/gainspan/profile/smartplug"
+        self.url = combine_url(self.base_url, "/gainspan/profile/smartplug")
         mirubee_re = {
             "active_power": re.compile(b"<(?:power|watt)>([^<]+)"),
             "voltage": re.compile(b"<(?:volts|vrms)>([^<]+)"),
@@ -146,8 +154,8 @@ class SmappeeDevice(MeteringDevice):
 
     def __init__(self, name, base_url, circuits: tuple, usr="", pwd=""):
         super().__init__(name, base_url, circuits, usr, pwd)
-        self.url = self.base_url + "/gateway/apipublic/reportInstantaneousValues"
-        self.url_logon = base_url + "/gateway/apipublic/logon"
+        self.url = combine_url(self.base_url, "/gateway/apipublic/reportInstantaneousValues")
+        self.url_logon = combine_url(base_url, "/gateway/apipublic/logon")
         smappee_re = {
             "active_power": re.compile(b" activePower=(\S+)"),
             "voltage": re.compile(b"voltage=(\S+)"),

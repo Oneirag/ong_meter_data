@@ -2,7 +2,7 @@
 Functions to read data from:
 
 ## Data read from I-DE (former Iberdrola Distribucion)
-First, you'll need a user, password and number of the metering point (CUPS), all that 
+First, you'll need a user (to be read in `config("i-de_usr")`), password (`config("i-de_pwd")`) and number of the metering point (CUPS, `config("cups")`) , all that 
 information is available in any spanish power invoice.
 
 You can register in www.i-de.es, only if in i-de distribution area. 
