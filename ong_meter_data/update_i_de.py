@@ -16,16 +16,12 @@ import ujson
 
 from ong_meter_data import config, logger, LOCAL_TZ, http
 from ong_tsdb.client import OngTsdbClient
+from ong_utils.urllib3 import get_cookies, cookies2header
 
 _bucket = config('bucket')
 _sensors = dict(sensor_1h="i-de_1h", sensor_1s="i-de_1s", sensor_15m="i-de_15m")
 URL_BASE = "https://www.i-de.es"
 SECONDS_SLEEP = 60 * 10
-
-
-def cookies2header(cookies: dict) -> dict:
-    """Converts cookies in dict to header field 'Cookie' for use in urllib3"""
-    return dict(Cookie="; ".join(f"{k}={v}" for k, v in cookies.items()))
 
 
 class IberdrolaSession(object):
@@ -36,9 +32,6 @@ class IberdrolaSession(object):
         self.cups = config("cups")
         self.USERNAME = user_name or config("i-de_usr")
         self.PASSWORD = password or config("i-de_pwd")
-        self.r = Request(URL_BASE)
-        self.cj = CookieJar()
-
         if os.path.exists(self.json_config_file):
             json_config = ujson.load(open(self.json_config_file, 'r'))
         else:
@@ -122,8 +115,8 @@ class IberdrolaSession(object):
             if not return_cookies:
                 return js
             else:
-                cks = self.cj.make_cookies(resp, self.r)
-                return js, {c.name: c.value for c in cks}
+                cks = get_cookies(resp)
+                return js, cks
 
     def _keep_sesion_opened(self) -> bool:
         """Sends a "keep-alive" request to keep session opened.
@@ -268,7 +261,7 @@ def get_timestamp(when=None):
 
 
 if __name__ == "__main__":
-    ongtsdb_client = OngTsdbClient(url=config('url'), port=config('port'), token=config('admin_token'))
+    ongtsdb_client = OngTsdbClient(url=config('url'), token=config('admin_token'))
     ongtsdb_client.create_db(_bucket)
     for sensor in _sensors.values():
         ongtsdb_client.create_sensor(_bucket, sensor, sensor.split("_")[1], metrics=list(),

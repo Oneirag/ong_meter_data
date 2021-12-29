@@ -10,7 +10,7 @@ from ong_tsdb.client import OngTsdbClient
 
 _esios_bucket = config("esios_bucket")
 _esios_sensor = "PVPC"
-ongtsdb_client = OngTsdbClient(url=config('url'), port=config('port'), token=config('admin_token'))
+ongtsdb_client = OngTsdbClient(url=config('url'), token=config('admin_token'))
 ongtsdb_client.create_db(_esios_bucket)
 ongtsdb_client.create_sensor(_esios_bucket, _esios_sensor, "1h", metrics=list(),
                              read_key=config('read_token'), write_key=config('write_token'))

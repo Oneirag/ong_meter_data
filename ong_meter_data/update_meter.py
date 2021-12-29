@@ -177,7 +177,7 @@ meters['smapee'] = SmappeeDevice('smappee', base_url=config("smappee_base_url"),
 
 # Generate database and sensors, if needed
 _bucket = config('bucket')
-ongtsdb_client = OngTsdbClient(url=config('url'), port=config('port'), token=config('admin_token'))
+ongtsdb_client = OngTsdbClient(url=config('url'), token=config('admin_token'))
 ongtsdb_client.create_db(_bucket)
 for sensor in meters.keys():
     ongtsdb_client.create_sensor(_bucket, sensor, "1s", metrics=list(),
