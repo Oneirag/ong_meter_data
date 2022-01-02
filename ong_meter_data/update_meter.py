@@ -54,19 +54,24 @@ class MeteringDevice(object):
     def read_meter_url(self):
         """Reads from meter device integrated web server and parses data into self.data """
         resp = self.__read_url()
-        body = resp.data
-        timer.tic("processing answer")
-        values = dict()
-        for k, regex in self.parse_dict.items():
-            a = regex.findall(body)
-            # print(a)
-            values[k] = [float(v) for v in a]
-        self.data = values
-        timer.toc("processing answer")
-        self.timestamp_ns = time.time_ns()
-        logger.debug("Leido " + self.name + " from url " + self.url)
-        logger.debug(body)
-        logger.debug(self.data)
+        if resp is None:
+            logger.info(f"Could not read {self.name}")
+            return
+        else:
+            body = resp.data
+            timer.tic("processing answer")
+            values = dict()
+            for k, regex in self.parse_dict.items():
+                a = regex.findall(body)
+                # print(a)
+                values[k] = [float(v) for v in a]
+            self.data = values
+            timer.toc("processing answer")
+            self.timestamp_ns = time.time_ns()
+            logger.debug("Leido " + self.name + " from url " + self.url)
+            logger.debug(body)
+            logger.debug(self.data)
+
 
     def write_meter_db(self):
         """Write last data read into influx db"""
