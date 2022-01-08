@@ -16,7 +16,7 @@ import ujson
 
 from ong_meter_data import config, logger, LOCAL_TZ, http
 from ong_tsdb.client import OngTsdbClient
-from ong_utils.urlib3 import get_cookies, cookies2header
+from ong_utils import get_cookies, cookies2header
 
 _bucket = config('bucket')
 _sensors = dict(sensor_1h="i-de_1h", sensor_1s="i-de_1s", sensor_15m="i-de_15m")
