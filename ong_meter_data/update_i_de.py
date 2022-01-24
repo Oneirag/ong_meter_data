@@ -6,17 +6,16 @@ A user name and a password is needed to log in
 """
 import os
 import time
-from http.cookiejar import CookieJar
 from tempfile import gettempdir
-from urllib.request import Request
 from datetime import datetime
+import logging
 
 import pandas as pd
 import ujson
 
 from ong_meter_data import config, logger, LOCAL_TZ, http
 from ong_tsdb.client import OngTsdbClient
-from ong_utils import get_cookies, cookies2header
+from ong_utils import get_cookies, cookies2header, OngTimer
 
 _bucket = config('bucket')
 _sensors = dict(sensor_1h="i-de_1h", sensor_1s="i-de_1s", sensor_15m="i-de_15m")
@@ -260,6 +259,65 @@ def get_timestamp(when=None):
     return int(when.value / 1e6)
 
 
+def read_historical_meter_reading(session: IberdrolaSession, ongtsdb_client: OngTsdbClient) -> bool:
+    """
+    Reads historical meter reading from i-de meter and stores into ong_tsdb database.
+    :param session: an already opened IberdrolaSession object , from where data will be read
+    :param ongtsdb_client: an already initialized OngTsdbClient, where data will be writen
+    :return: True if data could be read and write, false otherwise
+    """
+    sensor_meter = _sensors['sensor_1h']
+    date = ongtsdb_client.get_lasttimestamp(_bucket, sensor_meter)
+    if not date:
+        date = pd.Timestamp.now(tz=LOCAL_TZ).normalize() - pd.tseries.offsets.YearBegin(4)  # 4 year's history
+    else:
+        # Convert from timestamp to date + 3600s
+        date = pd.Timestamp.utcfromtimestamp(date).tz_localize("UTC").astimezone(LOCAL_TZ) + \
+               pd.tseries.offsets.Hour(1)
+    now = pd.Timestamp.now(tz=LOCAL_TZ).normalize()
+    month_start = now.replace(day=1)
+    if now.minute < 2 and now.hour < 4 or True:
+        for when in pd.date_range(min(date, month_start),
+                                  pd.Timestamp.now(tz=LOCAL_TZ) + pd.offsets.MonthEnd(1), freq="MS"):
+            sequence = session.read_monthly_history(sensor_meter, when)
+            if sequence:
+                ongtsdb_client.write(sequence)
+                logger.info(f"Historical data for month {when} saved")
+    return True
+
+
+def read_current_meter_reading(session: IberdrolaSession, ongtsdb_client: OngTsdbClient, retries: int = 4) -> bool:
+    """
+    Reads current meter reading from i-de meter and stores into ong_tsdb database. If data could not be read
+    then retries after 30s of sleep
+    :param session: an already opened IberdrolaSession object , from where data will be read
+    :param ongtsdb_client: an already initialized OngTsdbClient, where data will be writen
+    :param retries: number of retries if data is invalid
+    :return: True if data could be read and write, false otherwise
+    """
+    for retry_meter in range(retries):
+        attempt = retry_meter + 1
+        now_ts = pd.Timestamp.now(tz=LOCAL_TZ).value
+        with OngTimer(msg=f"Reading meter {attempt=}", logger=logger, log_level=logging.INFO):
+            res = session.read_meter()
+        if isinstance(res, dict):
+            logger.info(f"{attempt=}: Meter read from i-de meter: {res}")
+            # valor = float(res.get('valMagnitud', -1))
+            meter_reading = float(res.get('valLecturaContador', -1))
+            sensor_meter = _sensors['sensor_1h']
+            if meter_reading > 0:
+                if ongtsdb_client.write(
+                        [f"{_bucket},sensor={sensor_meter} LecturaContador={meter_reading} {now_ts}"]):
+                    logger.info(f"{attempt=}: Data writen to ong_tsdb database ok")
+                    return True
+            else:
+                logger.error(f"{attempt=}: Could not write i-de meter data, dictionary data invalid")
+        else:
+            logger.error(f"{attempt=}: Invalid data read from i-de meter: {res}")
+        time.sleep((attempt + 1) * 30)  # increase sleep time each retry, 30 additional seconds
+    return False
+
+
 if __name__ == "__main__":
     ongtsdb_client = OngTsdbClient(url=config('url'), token=config('admin_token'))
     ongtsdb_client.create_db(_bucket)
@@ -269,34 +327,9 @@ if __name__ == "__main__":
     session = IberdrolaSession()
     while True:
         login_ok = session.keep_login()
-        res = None
-        now_ts = pd.Timestamp.now(tz=LOCAL_TZ).value
-        logger.info("Reading meter")
-        res = session.read_meter()
-        logger.info("Meter read in {:.2f}s".format((pd.Timestamp.now(tz=LOCAL_TZ).value - now_ts) / 1e9))
-        if res is not None:
-            logger.debug(res)
-            valor = float(res['valMagnitud'])
-            valor_meter = float(res['valLecturaContador'])
-            sensor_meter = _sensors['sensor_1h']
-            ongtsdb_client.write([f"{_bucket},sensor={sensor_meter} LecturaContador={valor_meter} {now_ts}"])
-
-        sensor_meter = _sensors['sensor_1h']
-        date = ongtsdb_client.get_lasttimestamp(_bucket, sensor_meter)
-        if not date:
-            date = pd.Timestamp.now(tz=LOCAL_TZ).normalize() - pd.tseries.offsets.YearBegin(4)     # 4 year's history
-        else:
-            # Convert from timestamp to date + 3600s
-            date = pd.Timestamp.utcfromtimestamp(date).tz_localize("UTC").astimezone(LOCAL_TZ) + \
-                   pd.tseries.offsets.Hour(1)
-        now = pd.Timestamp.now(tz=LOCAL_TZ).normalize()
-        month_start = now.replace(day=1)
-        if now.minute < 2 and now.hour < 4 or True:
-            for when in pd.date_range(min(date, month_start),
-                                      pd.Timestamp.now(tz=LOCAL_TZ) + pd.offsets.MonthEnd(1), freq="MS"):
-                sequence = session.read_monthly_history(sensor_meter, when)
-                if sequence:
-                    ongtsdb_client.write(sequence)
-                    logger.info(f"Historical data for month {when} saved")
+        if read_current_meter_reading(session, ongtsdb_client):
+            # Todo: execute trigger here
+            pass
+        read_historical_meter_reading(session, ongtsdb_client)
         break       # Exit while loop
         time.sleep(SECONDS_SLEEP)
