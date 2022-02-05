@@ -20,7 +20,7 @@ from ong_utils import get_cookies, cookies2header, OngTimer
 _bucket = config('bucket')
 _sensors = dict(sensor_1h="i-de_1h", sensor_1s="i-de_1s", sensor_15m="i-de_15m")
 URL_BASE = "https://www.i-de.es"
-SECONDS_SLEEP = 60 * 10
+SECONDS_SLEEP = 60 * 10     # 10 min
 
 
 class IberdrolaSession(object):
@@ -186,7 +186,7 @@ class IberdrolaSession(object):
         Logs in with user and password and returns a tuple bool, str with the true or false of the login and the reason
         :return: True, None if successfully logged in
                 False, None if there is any connection trouble
-                False, js_response otherwise (can see there is there is a need for a captcha, bad password...)
+                False, js_response otherwise (can see if there is a need for a captcha, bad password...)
         """
         data = ujson.dumps([self.USERNAME,
                             self.PASSWORD,
@@ -246,9 +246,18 @@ class IberdrolaSession(object):
         params = (
             ('_', get_timestamp()),
         )
-        resp = self.do_request("get", '/consumidores/rest/escenarioNew/obtenerMedicionOnline/48',
-                               headers=self.get_headers())
-        return resp
+
+        # First, validate is connection to meter is allowed
+        resp_auth = self.do_request("get", "/consumidores/rest/escenarioNew/validarComunicacionContador/")
+        if isinstance(resp_auth, dict):
+            if resp_auth.get("permitirConexion"):
+                logger.info("Connection to meter allowed")
+                meter_url = '/consumidores/rest/escenarioNew/obtenerMedicionOnline/24'
+                resp = self.do_request("get", meter_url, headers=self.get_headers())
+                return resp
+            else:
+                logger.error(f"Could not connect to meter: {resp_auth}")
+                return None
 
 
 def get_timestamp(when=None):
@@ -308,12 +317,16 @@ def read_current_meter_reading(session: IberdrolaSession, ongtsdb_client: OngTsd
             if meter_reading > 0:
                 if ongtsdb_client.write(
                         [f"{_bucket},sensor={sensor_meter} LecturaContador={meter_reading} {now_ts}"]):
+                    # Write also in the 15 min sensor (to better know when it was written)
+                    ongtsdb_client.write(
+                        [f"{_bucket},sensor={_sensors['sensor_15m']} LecturaContador={meter_reading} {now_ts}"])
                     logger.info(f"{attempt=}: Data writen to ong_tsdb database ok")
                     return True
             else:
                 logger.error(f"{attempt=}: Could not write i-de meter data, dictionary data invalid")
         else:
             logger.error(f"{attempt=}: Invalid data read from i-de meter: {res}")
+        session.keep_login()
         time.sleep((attempt + 1) * 30)  # increase sleep time each retry, 30 additional seconds
     return False
 
@@ -325,11 +338,18 @@ if __name__ == "__main__":
         ongtsdb_client.create_sensor(_bucket, sensor, sensor.split("_")[1], metrics=list(),
                                      read_key=config('read_token'), write_key=config('write_token'))
     session = IberdrolaSession()
+    start_ts = pd.Timestamp.now()
     while True:
+        now = pd.Timestamp.now()
+        if (now - start_ts).seconds > 60 * 60 * 5:      # Give up after 5 hours
+            logger.error(f"Started at {start_ts}, cannot connect after 5h, giving up.")
+            break
         login_ok = session.keep_login()
+        if now.minute < 15:
+            read_historical_meter_reading(session, ongtsdb_client)
         if read_current_meter_reading(session, ongtsdb_client):
             # Todo: execute trigger here
             pass
-        read_historical_meter_reading(session, ongtsdb_client)
-        break       # Exit while loop
+            break       # Exit while loop on successful read
         time.sleep(SECONDS_SLEEP)
+        logger.info(f"Retrying after {SECONDS_SLEEP}")
