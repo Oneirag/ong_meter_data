@@ -62,7 +62,7 @@ def notify(min_hour: int = 6, max_hour: int = 10, threshold_kwh: float = 2.0, lo
             if pd.isna(reading):
                 logger.debug(f"No data available for fecha {day}")
             elif reading >= threshold_kwh:
-                bot.send_msg(f"Coche cargado para fecha {day}")
+                bot.send_msg(f"Coche cargado {reading:.1f}kWh para fecha {day}")
             else:
                 bot.send_msg(f"Coche NO cargado para fecha {day}")
     else:
