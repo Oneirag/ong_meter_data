@@ -3,3 +3,5 @@ ong_utils@git+https://github.com/Oneirag/ong_utils.git
 ong_esios@git+https://github.com/Oneirag/ong_esios.git
 ong_tsdb@git+https://github.com/Oneirag/ong_tsdb.git
 urllib3
+python-telegram-bot-raw[ujson]      # For notifications
+numpy

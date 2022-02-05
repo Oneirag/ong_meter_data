@@ -16,6 +16,7 @@ import ujson
 from ong_meter_data import config, logger, LOCAL_TZ, http
 from ong_tsdb.client import OngTsdbClient
 from ong_utils import get_cookies, cookies2header, OngTimer
+from ong_meter_data.ong_meter_data_bot.i_de import notify
 
 _bucket = config('bucket')
 _sensors = dict(sensor_1h="i-de_1h", sensor_1s="i-de_1s", sensor_15m="i-de_15m")
@@ -348,8 +349,7 @@ if __name__ == "__main__":
         if now.minute < 15:
             read_historical_meter_reading(session, ongtsdb_client)
         if read_current_meter_reading(session, ongtsdb_client):
-            # Todo: execute trigger here
-            pass
+            notify()
             break       # Exit while loop on successful read
         time.sleep(SECONDS_SLEEP)
         logger.info(f"Retrying after {SECONDS_SLEEP}")
