@@ -59,12 +59,14 @@ def notify(min_hour: int = 6, max_hour: int = 10, threshold_kwh: float = 2.0, lo
         bot = OngTelegramBot(chat_id=chat_id)
         res = get_charger_kwh(periods=lookback_days)  # Just today
         for day, reading in res.items():
+            day_formatted = day.strftime("%Y-%m-%d")
             if pd.isna(reading):
-                logger.debug(f"No data available for fecha {day}")
+                logger.debug(f"No data available for fecha {day_formatted}")
+                bot.send_msg(f"No hay datos para la fecha {day_formatted}")
             elif reading >= threshold_kwh:
-                bot.send_msg(f"Coche cargado {reading:.1f}kWh para fecha {day}")
+                bot.send_msg(f"Coche cargado {reading:.1f}kWh para fecha {day_formatted}")
             else:
-                bot.send_msg(f"Coche NO cargado para fecha {day}")
+                bot.send_msg(f"Coche NO cargado para fecha {day_formatted}. Registrados {reading:.1f}kWh")
     else:
         # Out of 6 to 10 am do nothing
         return
