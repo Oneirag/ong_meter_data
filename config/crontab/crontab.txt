@@ -28,7 +28,7 @@ BASH_ENV=~/.bashrc_conda
 # Read meter every 6 hours
 0 0 * * * conda activate ong_meter_data; cd ~/PycharmProjects/ong_meter_data; python -m ong_meter_data.update_i-de; conda deactivate
 0 6 * * * conda activate ong_meter_data; cd ~/PycharmProjects/ong_meter_data; python -m ong_meter_data.update_i-de; conda deactivate
-0 12 * * * conda activate ong_meter_data; cd ~/PycharmProjects/ong_meter_data; python -m ong_meter_data.update_i-de; conda dxseactivate
+0 12 * * * conda activate ong_meter_data; cd ~/PycharmProjects/ong_meter_data; python -m ong_meter_data.update_i-de; conda deactivate
 0 18 * * * conda activate ong_meter_data; cd ~/PycharmProjects/ong_meter_data; python -m ong_meter_data.update_i-de; conda deactivate
 # Update PVPC after 5pm after daily market
 0 16 * * * conda activate ong_meter_data; cd ~/PycharmProjects/ong_meter_data; python -m ong_meter_data.update_pvpc; conda deactivate

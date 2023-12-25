@@ -171,11 +171,11 @@ class SmappeeDevice(MeteringDevice):
 
 
 meters = dict()
-meters['mirubee'] = MirubeeDevice('mirubee', base_url=config("mirubee_base_url"),
+meters['mirubee'] = MirubeeDevice('mirubee', base_url="http://mirubee",
                                   circuits=('general', 'lights'),
                                   usr=config("meter_user"), pwd=config("meter_pwd")
                                   )
-meters['smapee'] = SmappeeDevice('smappee', base_url=config("smappee_base_url"),
+meters['smapee'] = SmappeeDevice('smappee', base_url="http://smappee",
                                   circuits=('general', 'lavadora', 'nevera'),
                                   usr=config("meter_user"), pwd=config("meter_pwd")
                                   )
