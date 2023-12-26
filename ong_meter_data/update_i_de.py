@@ -15,7 +15,7 @@ import ujson
 
 from ong_meter_data import config, logger, LOCAL_TZ, http
 from ong_tsdb.client import OngTsdbClient
-from ong_utils import get_cookies, cookies2header, OngTimer
+from ong_utils import get_cookies, cookies2header, OngTimer, is_debugging
 from ong_meter_data.ong_meter_data_bot.i_de import notify
 
 _bucket = config('bucket')
@@ -346,7 +346,7 @@ if __name__ == "__main__":
             logger.error(f"Started at {start_ts}, cannot connect after 5h, giving up.")
             break
         login_ok = session.keep_login()
-        if now.minute < 15:
+        if now.minute < 15 or is_debugging():
             read_historical_meter_reading(session, ongtsdb_client)
         if read_current_meter_reading(session, ongtsdb_client):
             notify()
