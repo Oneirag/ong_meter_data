@@ -21,7 +21,7 @@ def update_esios(date):
     start_t = time.time()
     esios = EsiosApi()
     # res = esios.download_by(name="pvpcdesglosehorario", date=date)
-    res = esios.download_by(id=1001, date=date)
+    res = esios.download("archives", 80, date=date)
     logger.info(f"Read esios data for day {date} in {time.time() - start_t:.3f}s")
     if res is None:
         logger.error(f"Error reading esios data for date {date}")
