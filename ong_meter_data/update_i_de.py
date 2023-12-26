@@ -12,10 +12,11 @@ import logging
 
 import pandas as pd
 import ujson
+import requests
 
-from ong_meter_data import config, logger, LOCAL_TZ, http
+from ong_meter_data import config, logger, LOCAL_TZ
 from ong_tsdb.client import OngTsdbClient
-from ong_utils import get_cookies, cookies2header, OngTimer, is_debugging
+from ong_utils import OngTimer, is_debugging
 from ong_meter_data.ong_meter_data_bot.i_de import notify
 
 _bucket = config('bucket')
@@ -39,6 +40,8 @@ class IberdrolaSession(object):
 
         self.JSESSIONID = json_config.get("JSESSIONID")
         self.next_keep_session = 0      # timestamp for a next keep session request MUST be sent
+        self.requests_session = requests.session()
+        self.requests_session.cookies.update({"JSESSIONID_WTG": self.JSESSIONID})
 
     def save_config(self):
         """Dumps JSESSIONID to avoid multiple login that will make captcha to appear"""
@@ -46,40 +49,29 @@ class IberdrolaSession(object):
         json_config["JSESSIONID"] = self.JSESSIONID
         ujson.dump(json_config, open(self.json_config_file, "w"))
 
-    def get_headers(self, jsessionid: str = None) -> dict:
+    def get_headers(self) -> dict:
         """
         Returns headers for request, including cookies
-        :param jsessionid: sessionid that comes from other requests, to override the stored one. Only needed to login
         :return: a dict to use in urllib3.request
         """
         headers = {
-            'cups': self.cups,
-            'Origin': URL_BASE,
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Accept-Language': 'es,en-US;q=0.9,en;q=0.8',
-            'idioma': 'es',
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu '
-                          'Chromium/69.0.3497.81 Chrome/69.0.3497.81 Safari/537.36',
-            'X-Forwarded-For': '4.103.2.35',
-            'Content-Type': 'application/json; charset=UTF-8',
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'Referer': URL_BASE + '/consumidores/inicio.html',
-            'movilAPP': 'no',
-            'X-Requested-With': 'XMLHttpRequest',
-            'Connection': 'keep-alive',
+            'authority': URL_BASE,
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'es-ES,es;q=0.9,en;q=0.8',
+            'appversion': 'v2',
+            'cache-control': 'no-cache',
+            'content-type': 'application/json; charset=UTF-8',
+            'dispositivo': 'desktop',
+            'origin': URL_BASE,
+            'pragma': 'no-cache',
+            'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"macOS"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
-        cookies = {
-            'leyAnticookies': '1',
-            'i18next': 'ES',
-            'username': self.USERNAME,
-            'uCcr': "",
-        }
-        jsessionid = jsessionid or self.JSESSIONID
-        if jsessionid:
-            cookies['JSESSIONID'] = jsessionid
-
-        headers.update(cookies2header(cookies))
-
         return headers
 
     def do_request(self, method: str, url: str, headers: dict = None, when=None, data=None, return_cookies=False):
@@ -100,22 +92,22 @@ class IberdrolaSession(object):
             fields = None
         if headers is None:
             headers = self.get_headers()
-        resp = http.request(method, URL_BASE + url, headers=headers, fields=fields, body=data)
-        if resp.status != 200:
-            logger.error(f"Error in query to {url=}: {resp.status=} {resp.data=}")
+        resp = self.requests_session.request(method, URL_BASE + url, headers=headers, params=fields, json=data)
+        if resp.status_code != 200:
+            logger.error(f"Error in query to {url=}: {resp.status_code=} {resp.content=}")
             if return_cookies:
                 return None, None
             else:
                 return None
         else:
             if resp.headers.get("Content-Type").split(";")[0] == "application/json":
-                js = ujson.loads(resp.data)
+                js = resp.json()
             else:
-                js = resp.data
+                js = resp.content
             if not return_cookies:
                 return js
             else:
-                cks = get_cookies(resp)
+                cks = resp.cookies
                 return js, cks
 
     def _keep_sesion_opened(self) -> bool:
@@ -189,20 +181,21 @@ class IberdrolaSession(object):
                 False, None if there is any connection trouble
                 False, js_response otherwise (can see if there is a need for a captcha, bad password...)
         """
-        data = ujson.dumps([self.USERNAME,
-                            self.PASSWORD,
-                            None,
-                            # Valor captcha. Es la respuesta del widget valorCaptcha = grecaptcha.getResponse(widget1);
-                            "Linux -",
-                            "PC",
-                            "Chrome 69.0.3497.81",
-                            "0",  # email
-                            "0",  # email2
-                            "0",  # cod solicitud
-                            "",  # uCcr
-                            "s"  # Mantener Sesion. Puede valer "s" o "n"
-                            ])
-        js, c5 = self.do_request("post", "/consumidores/rest/loginNew/login", data=data, return_cookies=True)
+        json_data = [
+            self.USERNAME,
+            self.PASSWORD,
+            None,
+            'Mac OS X 10_15_7',
+            'PC',
+            'Chrome 120.0.0.0',
+            '0',
+            '',
+            's',
+            None,
+            None,
+        ]
+
+        js, c5 = self.do_request("post", "/consumidores/rest/loginNew/login", data=json_data, return_cookies=True)
         if js is None:
             return False, None
         if "success" not in js:
@@ -212,7 +205,7 @@ class IberdrolaSession(object):
             return False, js
         if js["success"] != "true":
             return False, js
-        self.JSESSIONID = c5["JSESSIONID"]
+        self.JSESSIONID = c5["JSESSIONID_WTG"]
         self.save_config()
         logger.info("Log in successful")
         return True, js

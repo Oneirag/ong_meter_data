@@ -5,3 +5,4 @@ ong_tsdb@git+https://github.com/Oneirag/ong_tsdb.git
 urllib3
 python-telegram-bot-raw[ujson]      # For notifications
 numpy
+requests
