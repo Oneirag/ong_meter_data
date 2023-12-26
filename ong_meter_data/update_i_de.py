@@ -275,7 +275,7 @@ def read_historical_meter_reading(session: IberdrolaSession, ongtsdb_client: Ong
         date = pd.Timestamp.now(tz=LOCAL_TZ).normalize() - pd.tseries.offsets.YearBegin(4)  # 4 year's history
     else:
         # Convert from timestamp to date + 3600s
-        date = pd.Timestamp.utcfromtimestamp(date).tz_localize("UTC").astimezone(LOCAL_TZ) + \
+        date = pd.Timestamp.utcfromtimestamp(date).tz_convert("UTC").astimezone(LOCAL_TZ) + \
                pd.tseries.offsets.Hour(1)
     now = pd.Timestamp.now(tz=LOCAL_TZ).normalize()
     month_start = now.replace(day=1)
@@ -332,6 +332,10 @@ if __name__ == "__main__":
         ongtsdb_client.create_sensor(_bucket, sensor, sensor.split("_")[1], metrics=list(),
                                      read_key=config('read_token'), write_key=config('write_token'))
     session = IberdrolaSession()
+    login_ok = session.keep_login()
+    read_historical_meter_reading(session, ongtsdb_client)
+    exit(0)
+
     start_ts = pd.Timestamp.now()
     while True:
         now = pd.Timestamp.now()
@@ -339,6 +343,7 @@ if __name__ == "__main__":
             logger.error(f"Started at {start_ts}, cannot connect after 5h, giving up.")
             break
         login_ok = session.keep_login()
+
         if now.minute < 15 or is_debugging():
             read_historical_meter_reading(session, ongtsdb_client)
         if read_current_meter_reading(session, ongtsdb_client):
