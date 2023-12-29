@@ -52,7 +52,7 @@ def main():
     """
     last_ts = ongtsdb_client.get_lasttimestamp(_esios_bucket, _esios_sensor)
     if last_ts:
-        start_t = pd.Timestamp.utcfromtimestamp(last_ts).tz_localize("UTC").astimezone(LOCAL_TZ)
+        start_t = pd.Timestamp.utcfromtimestamp(last_ts).tz_convert("UTC").astimezone(LOCAL_TZ)
     else:
         start_t = pd.Timestamp(year=2014, month=4, day=1, tz=LOCAL_TZ)
     end_t = pd.Timestamp.today(tz=LOCAL_TZ).normalize() + pd.tseries.offsets.Day(1)
