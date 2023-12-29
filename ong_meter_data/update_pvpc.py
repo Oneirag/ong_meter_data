@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import datetime
 import time
 import multiprocessing
 
@@ -57,6 +58,8 @@ def main():
         start_t = pd.Timestamp(year=2014, month=4, day=1, tz=LOCAL_TZ)
     end_t = pd.Timestamp.today(tz=LOCAL_TZ).normalize() + pd.tseries.offsets.Day(1)
 
+    start_t = start_t.tz_localize(None).normalize()
+    end_t = end_t.tz_localize(None).normalize()
     pool = multiprocessing.Pool(processes=2)
     pool.map(update_esios, pd.date_range(start_t, end_t, freq="D"))
 
