@@ -117,7 +117,7 @@ class IberdrolaSession(object):
         if now < self.next_keep_session:
             return True         # avoid unnecessary log ins
         js = self.do_request("post", '/consumidores/rest/loginNew/mantenerSesion/')
-        if not js:
+        if not js or not js.get("usSes"):
             logger.info("Session closed".format(js))
             return False
         else:
