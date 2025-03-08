@@ -1,8 +1,9 @@
-pandas
-ong_utils
+pandas~=2.2.3
+ong_utils~=1.0.5
 ong_esios@git+https://github.com/Oneirag/ong_esios.git
 ong_tsdb@git+https://github.com/Oneirag/ong_tsdb.git
-urllib3
-python-telegram-bot-raw[ujson]      # For notifications
+urllib3~=2.3.0
+python-telegram-bot-raw[ujson]      # For notifications. DEPRECATED!
 numpy
-requests
+requests~=2.32.3
+schedule~=1.2.2

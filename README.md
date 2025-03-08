@@ -2,14 +2,15 @@
 Functions to read data from several sources
 
 ## Data read from I-DE (former Iberdrola Distribucion)
-First, you'll need a user (to be read in `config("i-de_usr")`), password (`config("i-de_pwd")`) and number of the metering point (CUPS, `config("cups")`) , all that 
+First, you'll need a user, password and number of the metering point (CUPS) , all that 
 information is available in any spanish power invoice.
 
-You can register in www.i-de.es, only if in i-de distribution area. 
+You can register in www.i-de.es, only if in i-de distribution area. Login in the page and get the `JSESSIONID` cookie,
+and store it in the file `JSESSIONID.txt` in the same folder as `update_i_de.py`
 
-Once setup, it will read meter data in real time 
-(can only be read 6 times per day not be) and also meter readings and meter invoiced readings
-Currently hourly readings are read
+The program must be kept opened so session is not closed. It reads historical hourly data every 6 hours.
+It could read also real time data, but code is commented out as it cannot be read more than 20 times per day
+so Iberdrola does not ban you!
 
 ## PVPC prices
 Using ong_esios
