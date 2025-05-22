@@ -7,6 +7,8 @@ import urllib3
 import threading
 from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer
+from tinytuya.Contrib.WiFiDualMeterDevice import WiFiDualMeterDevice
+
 
 timer = OngTimer(False)
 
@@ -89,7 +91,9 @@ class MeteringDevice(object):
                         name=_bucket, circuit=self.name, measurements=",".join(measurements_list), ts=self.timestamp_ns)
                     sequence.append(point)
             if sequence:
-                ongtsdb_client.write(sequence)
+                retval = ongtsdb_client.write(sequence)
+                if not retval:
+                    logger.info(f"Error writing {self.name} to db")
         except Exception as e:
             logger.info(f"Error writing {self.name}")
             logger.info(e)
@@ -168,21 +172,93 @@ class SmappeeDevice(MeteringDevice):
             # "current": re.compile(b"tcurrent=(\S+)"),
         }
         self.parse_dict = smappee_re
+        
+        
+class TinyTuyaDevice(MeteringDevice):
+    """Configuration of a tinytuya device. Sample data:
+    {"dps":{"1":false,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0}}
+    """
+
+    def __init__(self, name, base_url, circuits: tuple, usr="", pwd=""):
+        """
+        Inits the class that reads metering device
+        :param name: name of the metering device (to use as measurement name in influx)
+        :param base_url: base url of the device (it will be the IP of the device. Can be "auto" for auto discovery)
+        :param circuits: list of circuits names in the same order as they appear in the meter
+        :param usr: it will be the ID of the device
+        :param pwd: it will be the local key of the device
+        """
+        super().__init__(name, base_url, circuits, usr, pwd)
+        self.device = WiFiDualMeterDevice(
+            dev_id=usr,
+            local_key=pwd,
+            address=base_url,
+            version=3.4 
+        )
+        self.last_status = None 
+        data = self.device.status()
+        if data:
+            logger.debug(f"Connected to device {self.name} and received {data=}")
+        else:
+            logger.error("Could not connect to device " + self.name)
+
+    def read_meter_url(self):
+        #  DP_REFRESH: 18, // Request refresh of DPS  UPDATEDPS / LAN_QUERY_DP
+        # payload = wdm.generate_payload(command=18, data=[4, 5, 6, 18, 19, 20])
+        # print(wdm.receive())
+        # print(wdm.send(payload))
+        # res = wdm.receive()
+        # print(res)
+        self.device.updatedps([4, 5, 6, 18, 19, 20])
+        # from time import sleep
+        # sleep(5)
+        status = self.device.status()
+        if status != self.last_status:
+            logger.debug(f"Status changed for {self.name} from {self.last_status} to {status}")
+            self.last_status = status
+        self.data = dict()
+        # There are 2 circuits, first circuit is general, second is lavadora
+        circuit_dict = dict(zip("ab", self.circuits))
+        
+        def get_values_circuits(attr, status_data=None):
+            """Devuelve una lista de valores para cada circuito"""
+            retval = list()
+            for clamp, circuit in circuit_dict.items():
+                if attr.endswith("_"):
+                    dps_code = f"{attr}{clamp.upper()}"
+                else:
+                    dps_code = attr
+                dict_values = self.device.get_value(dps_code=getattr(self.device, dps_code), status_data=status_data)
+                numeric_value = next(iter(dict_values.values()))
+                retval.append(numeric_value)
+            return retval
+        
+        self.timestamp_ns = time.time_ns()
+        self.data['active_power'] = get_values_circuits("DPS_POWER_", status_data=status)
+        self.data['current'] = get_values_circuits("DPS_CURRENT_", status_data=status)
+        self.data['voltage'] = get_values_circuits("DPS_VOLTAGE", status_data=status)
+        logger.debug("Leido " + self.name)
+        
 
 
 meters = dict()
-meters['mirubee'] = MirubeeDevice('mirubee', base_url="http://mirubee",
-                                  circuits=('general', 'lights'),
-                                  usr=config("meter_user"), pwd=config("meter_pwd")
-                                  )
-meters['smapee'] = SmappeeDevice('smappee', base_url="http://smappee",
-                                  circuits=('general', 'lavadora', 'nevera'),
-                                  usr=config("meter_user"), pwd=config("meter_pwd")
-                                  )
+# meters['mirubee'] = MirubeeDevice('mirubee', base_url="http://mirubee",
+#                                   circuits=('general', 'lights'),
+#                                   usr=config("meter_user"), pwd=config("meter_pwd")
+#                                   )
+# meters['smapee'] = SmappeeDevice('smappee', base_url="http://smappee",
+#                                   circuits=('general', 'lavadora', 'nevera'),
+#                                   usr=config("meter_user"), pwd=config("meter_pwd")
+#                                   )
+meters['tinytuya'] = TinyTuyaDevice('tinytuya', base_url=config("tinytuya_wdm_base_url"),
+                                    circuits=('general', 'lavadora'),
+                                    usr=config("tinytuya_wdm_usr"), pwd=config("tinytuya_wdm_pwd")
+                                    )
+
 
 # Generate database and sensors, if needed
 _bucket = config('bucket')
-ongtsdb_client = OngTsdbClient(url=config('url'), token=config('admin_token'))
+ongtsdb_client = OngTsdbClient(url=config('url'), token=config('admin_token'), validate_server_version=False)
 ongtsdb_client.create_db(_bucket)
 for sensor in meters.keys():
     ongtsdb_client.create_sensor(_bucket, sensor, "1s", metrics=list(),
