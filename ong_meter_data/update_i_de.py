@@ -4,21 +4,17 @@
 Reads meter data from i-DE (former Iberdrola Distribucion)
 A user name and a password is needed to log in
 """
-import os
 import time
-from tempfile import gettempdir
 from datetime import datetime
 import logging
 from pathlib import Path
 
 import pandas as pd
-import ujson
 import requests
 
 from ong_meter_data import config, logger, LOCAL_TZ
 from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer, is_debugging
-from ong_meter_data.ong_meter_data_bot.i_de import notify
 from ong_meter_data.eks import run_eks
 import json
 import schedule
@@ -51,12 +47,13 @@ class IberdrolaSession(object):
         self.next_keep_session = 0      # timestamp for a next keep session request MUST be sent
         self.requests_session = requests.session()
         self.requests_session.cookies.update({"JSESSIONID": self.JSESSIONID})
-        self.requests_session.cookies.update({"bm_sz": self.bm_sz})
+        if self.bm_sz:
+            self.requests_session.cookies.update({"bm_sz": self.bm_sz})
 
 
     def save_config(self):
         """Dumps JSESSIONID to avoid multiple login that will make captcha to appear"""
-        self.json_config_file.write_text(self.JSESSIONID)
+        self.json_config_file.write_text(json.dumps(dict(JSESSIONID=self.JSESSIONID, bm_sz=None)))
 
     def get_headers(self) -> dict:
         """
@@ -122,7 +119,8 @@ class IberdrolaSession(object):
     def _keep_sesion_opened(self) -> bool:
         """Sends a "keep-alive" request to keep session opened.
         Returns OK if session is opened, False if a new login is needed"""
-        logger.info(f"Run eks: {run_eks(self.requests_session)}")
+        if self.bm_sz:
+            logger.info(f"Run eks: {run_eks(self.requests_session)}")
         now = pd.Timestamp.utcnow().timestamp()
         if now < self.next_keep_session:
             return True         # avoid unnecessary log ins
@@ -191,7 +189,7 @@ class IberdrolaSession(object):
                 False, None if there is any connection trouble
                 False, js_response otherwise (can see if there is a need for a captcha, bad password...)
         """
-        raise ValueError("Cannot preform automatic login due to protections")
+        # raise ValueError("Cannot preform automatic login due to protections")
         json_data = [
             self.USERNAME,
             self.PASSWORD,
@@ -213,6 +211,8 @@ class IberdrolaSession(object):
             if "captcha" in js:
                 logger.info("Captcha needed")
                 # exit(2)  # Need for a captcha...nothing to do here
+            else:
+                logger.info(f"Login invalid for unknown reasons: {js}")
             return False, js
         if js["success"] != "true":
             return False, js
@@ -361,6 +361,7 @@ if __name__ == "__main__":
     schedule.every(4).minutes.do(keep_login_job)
     schedule.every(6).hours.do(historical_job)
     keep_login_job()
+    historical_job()
     while True:
         schedule.run_pending()
         time.sleep(1)
