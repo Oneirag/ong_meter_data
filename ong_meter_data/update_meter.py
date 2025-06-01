@@ -10,7 +10,35 @@ from ong_utils import OngTimer
 from tinytuya.Contrib.WiFiDualMeterDevice import WiFiDualMeterDevice
 from tuya_connector import TuyaOpenAPI
 
-from ong_meter_data.update_i_de import SECONDS_SLEEP
+
+class MyWifiDualMeterDevice(WiFiDualMeterDevice):
+    """A version of WifiDualMeterDevice with the right mapping of data, as my device has a bit different settings"""
+    # My device has different settings as the standard
+    # Power A is 111
+    # Power B is 106
+    # Frequency is 102
+    # Voltage is 101
+    DPS_POWER_A = "111"
+    DPS_POWER_B = "106"
+    DPS_FREQ = "102"
+    DPS_VOLTAGE = "101"
+    DPS_CURRENT_A = "110"
+    DPS_CURRENT_B = "105"
+
+    def __init__(
+            self, dev_id, address=None, local_key="", dev_type="default", connection_timeout=5, version=3.1,
+            persist=False, cid=None, node_id=None, parent=None, connection_retry_limit=5, connection_retry_delay=5,
+            port=6668
+    ):
+        persist = True  # Make connection persistent by default
+        super().__init__(dev_id, address, local_key, dev_type, connection_timeout, version, persist, cid, node_id,
+                         parent, connection_retry_limit, connection_retry_delay, port)
+        # Scaling is also different than standard. Fix it
+        self.dps_data[self.DPS_POWER_A]['scale'] = 10  # Instead of 100
+        self.dps_data[self.DPS_POWER_B]['scale'] = 10  # Instead of 100
+        self.dps_data[self.DPS_CURRENT_A]['scale'] = 1000  # In Amps (original reading is in mA)
+        self.dps_data[self.DPS_CURRENT_B]['scale'] = 1000  # In Amps (original reading is in mA)
+
 
 timer = OngTimer(False)
 
@@ -168,10 +196,10 @@ class SmappeeDevice(MeteringDevice):
         self.url = combine_url(self.base_url, "/gateway/apipublic/reportInstantaneousValues")
         self.url_logon = combine_url(base_url, "/gateway/apipublic/logon")
         smappee_re = {
-            "active_power": re.compile(b" activePower=(\S+)"),
-            "voltage": re.compile(b"voltage=(\S+)"),
-            "reactive_power": re.compile(b" reactivePower=(\S+)"),
-            # "current": re.compile(b"tcurrent=(\S+)"),
+            "active_power": re.compile(br" activePower=(\S+)"),
+            "voltage": re.compile(br"voltage=(\S+)"),
+            "reactive_power": re.compile(br" reactivePower=(\S+)"),
+            # "current": re.compile(br"tcurrent=(\S+)"),
         }
         self.parse_dict = smappee_re
         
@@ -191,7 +219,7 @@ class TinyTuyaDevice(MeteringDevice):
         :param pwd: it will be the local key of the device
         """
         super().__init__(name, base_url, circuits, usr, pwd)
-        self.device = WiFiDualMeterDevice(
+        self.device = MyWifiDualMeterDevice(
             dev_id=usr,
             local_key=pwd,
             address=base_url,
@@ -293,23 +321,7 @@ class TuyaCloudDevice(TinyTuyaDevice):
         last_status = last_data['result']['properties']
         timestamps = {str(d['dp_id']): d['time'] for d in last_status}
         last_timestamp = max(timestamps.values())
-        # Power A is 111
-        # Power B is 106
-        # Frequency is 102
-        # Voltage is 101
         dps = {str(d['dp_id']): d['value'] for d in last_status}
-        # My device has different settings as the standard
-        self.device.DPS_POWER_A = "111"
-        self.device.DPS_POWER_B = "106"
-        self.device.DPS_FREQ = "102"
-        self.device.DPS_VOLTAGE = "101"
-        self.device.DPS_CURRENT_A = "110"
-        self.device.DPS_CURRENT_B = "105"
-
-        self.device.dps_data[self.device.DPS_POWER_A]['scale'] = 10     # Instead of 100
-        self.device.dps_data[self.device.DPS_POWER_B]['scale'] = 10     # Instead of 100
-        self.device.dps_data[self.device.DPS_CURRENT_A]['scale'] = 1000    # In Amps (original reading is in mA)
-        self.device.dps_data[self.device.DPS_CURRENT_B]['scale'] = 1000  # In Amps (original reading is in mA)
 
         timestamp = int(last_timestamp * 1e6)
         return dict(dps=dps, timestamp=timestamp)
@@ -324,15 +336,15 @@ meters = dict()
 #                                   circuits=('general', 'lavadora', 'nevera'),
 #                                   usr=config("meter_user"), pwd=config("meter_pwd")
 #                                   )
-# meters['tinytuya'] = TinyTuyaDevice('tinytuya', base_url=config("tinytuya_wdm_base_url"),
-#                                     circuits=('general', 'lavadora'),
-#                                     usr=config("tinytuya_wdm_usr"), pwd=config("tinytuya_wdm_pwd")
-#                                     )
-meters['tinytuya'] = TuyaCloudDevice('tinytuya', cloud_api_base_url=config("tuyacloud_api_endoint"),
+meters['tinytuya'] = TinyTuyaDevice('tinytuya', base_url=config("tinytuya_wdm_base_url"),
                                     circuits=('general', 'lavadora'),
-                                    access_id=config("tuyacloud_access_id"), access_key=config("tuyacloud_access_key"),
-                                    device_id=config("tuyacloud_device_id")
+                                    usr=config("tinytuya_wdm_usr"), pwd=config("tinytuya_wdm_pwd")
                                     )
+# meters['tinytuya'] = TuyaCloudDevice('tinytuya', cloud_api_base_url=config("tuyacloud_api_endoint"),
+#                                     circuits=('general', 'lavadora'),
+#                                     access_id=config("tuyacloud_access_id"), access_key=config("tuyacloud_access_key"),
+#                                     device_id=config("tuyacloud_device_id")
+#                                     )
 
 
 # Generate database and sensors, if needed
