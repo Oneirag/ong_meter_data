@@ -12,40 +12,49 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from src.ong_meter_data import config, logger, LOCAL_TZ
+from ong_meter_data import config, logger, LOCAL_TZ
 from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer
+from ong_utils import OngTimer, is_debugging
+# from ong_meter_data.eks import run_eks
+import json
 import schedule
 
 _bucket = config('bucket')
 _sensors = dict(sensor_1h="i-de_1h", sensor_1s="i-de_1s", sensor_15m="i-de_15m")
 URL_BASE = "https://www.i-de.es"
-JSESSIONID_FILE = "JSESSIONID.txt"
-SECONDS_SLEEP = 60 * 10  # 10 min
+COOKIES_FILE = "cookies.json"
+SECONDS_SLEEP = 60 * 10     # 10 min
 
 
 class IberdrolaSession(object):
 
     def __init__(self, user_name: str = None, password: str = None):
-        """Inits session object, getting JSESSIONID from iberdrola_session.js from current dir to avoid captcha"""
-        self.json_config_file = Path(__file__).with_name(JSESSIONID_FILE)
-        # self.cups = config("cups")
-        # self.USERNAME = user_name or config("i-de_usr")
-        # self.PASSWORD = password or config("i-de_pwd")
+        """Inits session object, getting JSESSIONID and bm_sz from iberdrola_session.js from current dir to avoid captcha"""
+        self.json_config_file = Path(__file__).with_name(COOKIES_FILE)
+        self.cups = config("cups")
+        self.USERNAME = user_name or config("i-de_usr")
+        self.PASSWORD = password or config("i-de_pwd")
         if not self.json_config_file.exists():
             error_msg = f"File {self.json_config_file} does not exist. Cannot proceed with login"
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        self.JSESSIONID = self.json_config_file.read_text().splitlines()[0]
+        json_config = json.loads(self.json_config_file.read_text())
+
+        self.JSESSIONID = json_config["JSESSIONID"]
+        self.bm_sz = json_config["bm_sz"]
         logger.info(f"Using JSESSIONID: {self.JSESSIONID[:8]}")
-        self.next_keep_session = 0  # timestamp for a next keep session request MUST be sent
+        self.next_keep_session = 0      # timestamp for a next keep session request MUST be sent
         self.requests_session = requests.session()
         self.requests_session.cookies.update({"JSESSIONID": self.JSESSIONID})
+        if self.bm_sz:
+            self.requests_session.cookies.update({"bm_sz": self.bm_sz})
+
 
     def save_config(self):
         """Dumps JSESSIONID to avoid multiple login that will make captcha to appear"""
-        self.json_config_file.write_text(self.JSESSIONID)
+        self.json_config_file.write_text(json.dumps(dict(JSESSIONID=self.JSESSIONID, bm_sz=None)))
 
     def get_headers(self) -> dict:
         """
@@ -111,9 +120,11 @@ class IberdrolaSession(object):
     def _keep_sesion_opened(self) -> bool:
         """Sends a "keep-alive" request to keep session opened.
         Returns OK if session is opened, False if a new login is needed"""
+        if self.bm_sz:
+            logger.info(f"Run eks: {run_eks(self.requests_session)}")
         now = pd.Timestamp.utcnow().timestamp()
         if now < self.next_keep_session:
-            return True  # avoid unnecessary log ins
+            return True         # avoid unnecessary log ins
         js, cookies = self.do_request("post", '/consumidores/rest/loginNew/mantenerSesion/', return_cookies=True)
         if not js or not js.get("usSes"):
             logger.info("Session closed".format(js))
@@ -121,7 +132,6 @@ class IberdrolaSession(object):
         else:
             self.next_keep_session = now + (int(js['total']) - int(js['aviso'])) * 60
             logger.info("Status: {}".format(js))
-            # self.json_config_file.write_text(cookies["JSESSIONID"])
             return True
 
     def read_monthly_history(self, sensor_name: str, when=None, frecuencia="dias", acumular="false") -> list:
@@ -136,8 +146,8 @@ class IberdrolaSession(object):
         """
         # when_str = "03-10-201800:00:00"
         when = when or pd.Timestamp.today()
-        dt_from = when.normalize().replace(day=1)  # month start
-        dt_to = dt_from + pd.tseries.offsets.MonthEnd(1) + pd.tseries.offsets.Day(1) - pd.offsets.Second(1)  # month end
+        dt_from = when.normalize().replace(day=1)         # month start
+        dt_to = dt_from + pd.tseries.offsets.MonthEnd(1)  + pd.tseries.offsets.Day(1) - pd.offsets.Second(1)  # month end
         when_str = when.strftime("%d-%m-%Y00:00:00")
         mask_url_consumo_facturado = "/consumidores/rest/consumoNew" \
                                      "/obtenerDatosConsumoFacturado/numFactura/null/fechaDesde/{desde}/fechaHasta/{hasta}/"
@@ -180,35 +190,37 @@ class IberdrolaSession(object):
                 False, None if there is any connection trouble
                 False, js_response otherwise (can see if there is a need for a captcha, bad password...)
         """
-        raise ValueError("Cannot preform automatic login due to protections")
-        # json_data = [
-        #     self.USERNAME,
-        #     self.PASSWORD,
-        #     None,
-        #     'Mac OS X 10_15_7',
-        #     'PC',
-        #     'Chrome 120.0.0.0',
-        #     '0',
-        #     '',
-        #     's',
-        #     None,
-        #     None,
-        # ]
-        #
-        # js, c5 = self.do_request("post", "/consumidores/rest/loginNew/login", data=json_data, return_cookies=True)
-        # if js is None:
-        #     return False, None
-        # if "success" not in js:
-        #     if "captcha" in js:
-        #         logger.info("Captcha needed")
-        #         # exit(2)  # Need for a captcha...nothing to do here
-        #     return False, js
-        # if js["success"] != "true":
-        #     return False, js
-        # self.JSESSIONID = c5["JSESSIONID"]
-        # self.save_config()
-        # logger.info("Log in successful")
-        # return True, js
+        # raise ValueError("Cannot preform automatic login due to protections")
+        json_data = [
+            self.USERNAME,
+            self.PASSWORD,
+            None,
+            'Mac OS X 10_15_7',
+            'PC',
+            'Chrome 120.0.0.0',
+            '0',
+            '',
+            's',
+            None,
+            None,
+        ]
+
+        js, c5 = self.do_request("post", "/consumidores/rest/loginNew/login", data=json_data, return_cookies=True)
+        if js is None:
+            return False, None
+        if "success" not in js:
+            if "captcha" in js:
+                logger.info("Captcha needed")
+                # exit(2)  # Need for a captcha...nothing to do here
+            else:
+                logger.info(f"Login invalid for unknown reasons: {js}")
+            return False, js
+        if js["success"] != "true":
+            return False, js
+        self.JSESSIONID = c5["JSESSIONID"]
+        self.save_config()
+        logger.info("Log in successful")
+        return True, js
 
     def keep_login(self) -> bool:
         """Does (or keeps) login"""
@@ -336,7 +348,6 @@ if __name__ == "__main__":
         login_ok = session.keep_login()
         logger.info(f"Login ok: {login_ok}")
 
-
     def historical_job():
         ongtsdb_client = OngTsdbClient(url=config('url'), token=config('admin_token'), validate_server_version=False)
         ongtsdb_client.create_db(_bucket)
@@ -348,10 +359,10 @@ if __name__ == "__main__":
         read_historical_meter_reading(session, ongtsdb_client)
         logger.info(f"Historical data read")
 
-
-    schedule.every(1).minutes.do(keep_login_job)
+    schedule.every(4).minutes.do(keep_login_job)
     schedule.every(6).hours.do(historical_job)
     keep_login_job()
+    historical_job()
     while True:
         schedule.run_pending()
         time.sleep(1)
@@ -361,7 +372,7 @@ if __name__ == "__main__":
     start_ts = pd.Timestamp.now()
     while True:
         now = pd.Timestamp.now()
-        if (now - start_ts).seconds > 60 * 60 * 5:  # Give up after 5 hours
+        if (now - start_ts).seconds > 60 * 60 * 5:      # Give up after 5 hours
             logger.error(f"Started at {start_ts}, cannot connect after 5h, giving up.")
             break
         login_ok = session.keep_login()
@@ -370,6 +381,6 @@ if __name__ == "__main__":
             read_historical_meter_reading(session, ongtsdb_client)
         if read_current_meter_reading(session, ongtsdb_client):
             notify()
-            break  # Exit while loop on successful read
+            break       # Exit while loop on successful read
         time.sleep(SECONDS_SLEEP)
         logger.info(f"Retrying after {SECONDS_SLEEP}")

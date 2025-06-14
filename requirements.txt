@@ -7,3 +7,8 @@ python-telegram-bot-raw[ujson]      # For notifications. DEPRECATED!
 numpy
 requests~=2.32.3
 schedule~=1.2.2
+
+# tenacity~=9.0.0
+# playwright~=1.50.0
+tinytuya~=1.16.3                # For accessing tuya devices directly (fails after some time)
+tuya-connector-python   # For accessing tuya devices from cloud
