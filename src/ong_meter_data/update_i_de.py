@@ -14,9 +14,8 @@ import requests
 
 from ong_meter_data import config, logger, LOCAL_TZ
 from ong_tsdb.client import OngTsdbClient
-from ong_utils import OngTimer
 from ong_utils import OngTimer, is_debugging
-# from ong_meter_data.eks import run_eks
+from ong_meter_data.eks import run_eks
 import json
 import schedule
 

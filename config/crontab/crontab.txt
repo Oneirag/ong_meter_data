@@ -25,8 +25,8 @@
 SHELL=/bin/bash
 BASH_ENV=~/.bashrc_conda
 
-# Read meter every 6 hours
-0 */6 * * * ~/.venv/bin/python -m ong_meter_data.update_i-de
+# Read meter every 6 hours: Not needed as it will be run with supervisor
+# 0 */6 * * * ~/.venv/bin/python -m ong_meter_data.update_i-de
 # Update PVPC after 5pm after daily market
 0 16 * * * ~/.venv/bin/python -m ong_meter_data.update_pvpc
 
