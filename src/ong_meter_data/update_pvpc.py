@@ -5,7 +5,7 @@ import multiprocessing
 from ong_utils import LOCAL_TZ
 from ong_esios.esios_api import EsiosApi
 import pandas as pd
-from src.ong_meter_data import config, logger
+from ong_meter_data import config, logger
 from ong_tsdb.client import OngTsdbClient
 
 _esios_bucket = config("esios_bucket")

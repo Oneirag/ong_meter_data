@@ -2,7 +2,7 @@
 import time
 import re
 
-from src.ong_meter_data import logger, config, http
+from ong_meter_data import logger, config, http
 import urllib3
 from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer
