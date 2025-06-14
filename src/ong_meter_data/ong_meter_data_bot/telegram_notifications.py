@@ -5,7 +5,7 @@ Needs the following configuration variables:
     telegram_chat_id
 """
 import telegram
-from ong_meter_data import config, logger, add_app_config
+from src.ong_meter_data import config, logger, add_app_config
 
 
 class OngTelegramBot:

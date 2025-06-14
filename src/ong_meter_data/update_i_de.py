@@ -12,9 +12,9 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from ong_meter_data import config, logger, LOCAL_TZ
+from src.ong_meter_data import config, logger, LOCAL_TZ
 from ong_tsdb.client import OngTsdbClient
-from ong_utils import OngTimer, is_debugging
+from ong_utils import OngTimer
 import schedule
 
 _bucket = config('bucket')

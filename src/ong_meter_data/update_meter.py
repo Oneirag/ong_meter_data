@@ -2,9 +2,8 @@
 import time
 import re
 
-from ong_meter_data import logger, config, http
+from src.ong_meter_data import logger, config, http
 import urllib3
-import threading
 from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer
 

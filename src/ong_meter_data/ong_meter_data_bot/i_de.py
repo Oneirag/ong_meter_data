@@ -4,9 +4,9 @@ Implements a notify() function to send telegram messages informing on car change
 
 from ong_tsdb.client import OngTsdbClient
 from ong_utils import LOCAL_TZ, OngTimer
-from ong_meter_data import config, logger
+from src.ong_meter_data import config, logger
 import pandas as pd
-from ong_meter_data.ong_meter_data_bot.telegram_notifications import OngTelegramBot
+from src.ong_meter_data.ong_meter_data_bot.telegram_notifications import OngTelegramBot
 
 
 def _read_dfs(date_from: pd.Timestamp, db="meter", meter_metric="LecturaContador", meter_sensor="i-de_1h",

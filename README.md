@@ -12,11 +12,17 @@ The program must be kept opened so session is not closed. It reads historical ho
 It could read also real time data, but code is commented out as it cannot be read more than 20 times per day
 so Iberdrola does not ban you!
 
+Execute `python -m ong_meter_data.update_i_de`
+
 ## PVPC prices
 Using ong_esios
 
+Execute `python -m ong_meter_data.update_pvpc`
+
 ## Real time (every second) meter information
-From two devices: a mirubee device and a smappee device
+From mirubee, smappe or tuya device
+
+Execute `python -m ong_meter_data.update_meter`
 
 ## Troubleshooting
 
