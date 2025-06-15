@@ -29,21 +29,27 @@ SECONDS_SLEEP = 60 * 10     # 10 min
 class IberdrolaSession(object):
 
     def __init__(self, user_name: str = None, password: str = None):
-        """Inits session object, getting JSESSIONID and bm_sz from iberdrola_session.js from current dir to avoid captcha"""
-        self.json_config_file = Path(__file__).with_name(COOKIES_FILE)
+        """Inits session object, getting JSESSIONID and bm_sz from ~/.config/ongpi/cookies.json to avoid captcha"""
+        config_file_path = Path("~/.config/ongpi/").expanduser()
+        config_file_path.mkdir(parents=True, exist_ok=True)
+        self.json_config_file = config_file_path / COOKIES_FILE
         self.cups = config("cups")
         self.USERNAME = user_name or config("i-de_usr")
         self.PASSWORD = password or config("i-de_pwd")
         if not self.json_config_file.exists():
-            error_msg = f"File {self.json_config_file} does not exist. Cannot proceed with login"
+            error_msg = (f"File {self.json_config_file} does not exist. Cannot proceed with login.\n" +                
+                f"Please create it with JSESSIONID and bm_sz cookies from a requests to mantenerSesion or to eks from www.i-de.es.\n"
+                "Minimum content is:\n"
+                f'{{"JSESSIONID": "your_jsessionid", "bm_sz": "your_bm_sz"}}\n' 
+            )
+                
             logger.error(error_msg)
             raise ValueError(error_msg)
 
         json_config = json.loads(self.json_config_file.read_text())
 
         self.JSESSIONID = json_config["JSESSIONID"]
-        self.bm_sz = json_config["bm_sz"]
-        logger.info(f"Using JSESSIONID: {self.JSESSIONID[:8]}")
+        self.bm_sz = json_config.get("bm_sz")
         self.next_keep_session = 0      # timestamp for a next keep session request MUST be sent
         self.requests_session = requests.session()
         self.requests_session.cookies.update({"JSESSIONID": self.JSESSIONID})

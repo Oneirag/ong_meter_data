@@ -7,7 +7,7 @@ information is available in any spanish power invoice.
 
 You can register in www.i-de.es, only if in i-de distribution area. Login in the page and get the `JSESSIONID` and  `bm_sz` cookies,
 from the request either to `mantenerSesion` or `eks` endpoints, 
-and store it in the file `cookies.json` in the same folder as `update_i_de.py`. The file should look like this:
+and store it in the file `~/.config/ongpi/cookies.json`. The file should look like this:
 ```json
 {
     "JSESSIONID": "12348THfXX5KzwMknn5oF9f18DA:1f6c1hJk9",
