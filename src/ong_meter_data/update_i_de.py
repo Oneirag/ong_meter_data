@@ -7,7 +7,6 @@ A user name and a password is needed to log in
 import time
 from datetime import datetime
 import logging
-from pathlib import Path
 
 import pandas as pd
 import requests
@@ -16,28 +15,26 @@ from ong_meter_data import config, logger, LOCAL_TZ
 from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer, is_debugging
 from ong_meter_data.eks import run_eks
+from ong_meter_data import JSON_CONFIG_FILE
 import json
 import schedule
 
 _bucket = config('bucket')
 _sensors = dict(sensor_1h="i-de_1h", sensor_1s="i-de_1s", sensor_15m="i-de_15m")
 URL_BASE = "https://www.i-de.es"
-COOKIES_FILE = "cookies.json"
 SECONDS_SLEEP = 60 * 10     # 10 min
 
 
 class IberdrolaSession(object):
 
     def __init__(self, user_name: str = None, password: str = None):
-        """Inits session object, getting JSESSIONID and bm_sz from ~/.config/ongpi/cookies.json to avoid captcha"""
-        config_file_path = Path("~/.config/ongpi/").expanduser()
-        config_file_path.mkdir(parents=True, exist_ok=True)
-        self.json_config_file = config_file_path / COOKIES_FILE
+        """Inits session object, getting JSESSIONID and bm_sz from ~/.config/ongpi/i-de_cookies.json to avoid captcha"""
+
         self.cups = config("cups")
         self.USERNAME = user_name or config("i-de_usr")
         self.PASSWORD = password or config("i-de_pwd")
-        if not self.json_config_file.exists():
-            error_msg = (f"File {self.json_config_file} does not exist. Cannot proceed with login.\n" +                
+        if not JSON_CONFIG_FILE.exists():
+            error_msg = (f"File {JSON_CONFIG_FILE} does not exist. Cannot proceed with login.\n" +
                 f"Please create it with JSESSIONID and bm_sz cookies from a requests to mantenerSesion or to eks from www.i-de.es.\n"
                 "Minimum content is:\n"
                 f'{{"JSESSIONID": "your_jsessionid", "bm_sz": "your_bm_sz"}}\n' 
@@ -46,7 +43,7 @@ class IberdrolaSession(object):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        json_config = json.loads(self.json_config_file.read_text())
+        json_config = json.loads(JSON_CONFIG_FILE.read_text())
 
         self.JSESSIONID = json_config["JSESSIONID"]
         self.bm_sz = json_config.get("bm_sz")
@@ -59,7 +56,7 @@ class IberdrolaSession(object):
 
     def save_config(self):
         """Dumps JSESSIONID to avoid multiple login that will make captcha to appear"""
-        self.json_config_file.write_text(json.dumps(dict(JSESSIONID=self.JSESSIONID, bm_sz=None)))
+        JSON_CONFIG_FILE.write_text(json.dumps(dict(JSESSIONID=self.JSESSIONID, bm_sz=None)))
 
     def get_headers(self) -> dict:
         """
@@ -86,14 +83,14 @@ class IberdrolaSession(object):
         }
         return headers
 
-    def do_request(self, method: str, url: str, headers: dict = None, when=None, data=None, return_cookies=False):
+    def do_request(self, method: str, url: str, headers: dict = None, when=None, json=None, return_cookies=False, **kwargs):
         """
         Returns json (or None if failed) for a request to the url (relative to BASE_URL)
         :param method: get or post
         :param url: url (relative to BASE_URL. The actual url to open will be BASE_URL + url)
         :param headers: headers for request (dict). If None, self.get_headers() will be used
         :param when: if not None, a parameter "when" will be added to the query
-        :param data: if not None, body data to send in post request
+        :param json: if not None, body data to send in post request
         :param return_cookies: if true, returns a tuple of json-converted response and dict of cookies
         :return: a dict with the json content of the response, or if return_cookies a tuple with two elements,
         first the dict of the json of the response and second a dict with the cookies
@@ -104,7 +101,7 @@ class IberdrolaSession(object):
             fields = None
         if headers is None:
             headers = self.get_headers()
-        resp = self.requests_session.request(method, URL_BASE + url, headers=headers, params=fields, json=data)
+        resp = self.requests_session.request(method, URL_BASE + url, headers=headers, params=fields, json=json, **kwargs)
         if resp.status_code != 200:
             logger.error(f"Error in query to {url=}: {resp.status_code=} {resp.content=}")
             if return_cookies:
@@ -130,7 +127,8 @@ class IberdrolaSession(object):
         now = pd.Timestamp.utcnow().timestamp()
         if now < self.next_keep_session:
             return True         # avoid unnecessary log ins
-        js, cookies = self.do_request("post", '/consumidores/rest/loginNew/mantenerSesion/', return_cookies=True)
+        js, cookies = self.do_request("post", '/consumidores/rest/loginNew/mantenerSesion/',
+                                      return_cookies=True)
         if not js or not js.get("usSes"):
             logger.info("Session closed".format(js))
             return False
@@ -210,7 +208,7 @@ class IberdrolaSession(object):
             None,
         ]
 
-        js, c5 = self.do_request("post", "/consumidores/rest/loginNew/login", data=json_data, return_cookies=True)
+        js, c5 = self.do_request("post", "/consumidores/rest/loginNew/login", json=json_data, return_cookies=True)
         if js is None:
             return False, None
         if "success" not in js:

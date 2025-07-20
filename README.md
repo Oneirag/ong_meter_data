@@ -7,7 +7,7 @@ information is available in any spanish power invoice.
 
 You can register in www.i-de.es, only if in i-de distribution area. Login in the page and get the `JSESSIONID` and  `bm_sz` cookies,
 from the request either to `mantenerSesion` or `eks` endpoints, 
-and store it in the file `~/.config/ongpi/cookies.json`. The file should look like this:
+and store it in the file `~/.config/ongpi/i-de_cookies.json`. The file should look like this:
 ```json
 {
     "JSESSIONID": "12348THfXX5KzwMknn5oF9f18DA:1f6c1hJk9",
@@ -20,6 +20,22 @@ It could read also real time data, but code is commented out as it cannot be rea
 so Iberdrola does not ban you!
 
 Execute `python -m ong_meter_data.update_i_de`
+
+### Script for automatically login to i-de website and get cookies
+
+Execute `python -m ong_meter_data.update_cookies_playwright` to use playwright to log in to i-de site and create the
+cookies file automatically. It needs:
+* A graphical interface
+* Install playwright (with `pip install playwright`)
+* Download browsers (with `playwright download`)
+* Set up username and password in the `i-de_usr` and `i-de_pwd` keys of the config file (located in `~/.config/ongpi/ong_config.yaml`) under the section `ong_meter_data`.
+An example of the config file would be:
+```yaml
+log: {}
+ong_meter_data:
+  i-de_usr: your_user
+  i-de_pwd: your_password
+```
 
 ## PVPC prices
 Using `ong_esios` availabe [here](https://github.com/Oneirag/ong_esios)
