@@ -237,14 +237,14 @@ class IberdrolaSession(object):
                 logger.info(f"Session opened: {js_login}")
                 self._keep_sesion_opened()
                 return True
-            else:
+            elif js_login:
                 if "captcha" in js_login:
                     min_wait = 30
                     logger.warning(f"Captcha needed, waiting {min_wait} min: {js_login}")
                     time.sleep(min_wait * 60)  # wait 30 min...
                 else:
                     min_wait = 5
-                    logger.warning(f"Logg in failed for unknown reason, waiting {min_wait} min: {js_login}")
+                    logger.warning(f"Log in failed for unknown reason, waiting {min_wait} min: {js_login}")
                     time.sleep(min_wait * 60)  # wait 5 min...
 
         logger.critical("Could not log in")

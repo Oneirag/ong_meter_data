@@ -1,7 +1,7 @@
 from ong_utils import OngConfig, LOCAL_TZ, create_pool_manager
 from pathlib import Path
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 
 _util = OngConfig("ong_meter_data", cfg_filename="ong_config.yml")
 logger = _util.logger
