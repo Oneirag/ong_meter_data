@@ -4,20 +4,25 @@ Opens i-de website in a browser, gets cookies from it and writes them to the con
 
 import json
 from ong_meter_data import JSON_CONFIG_FILE, config
-
+from fake_useragent import UserAgent
 from playwright.sync_api import sync_playwright
+
+ua = UserAgent()
 
 with sync_playwright() as p:
     args = []
     # disable navigator.webdriver:true flag
     args.append("--disable-blink-features=AutomationControlled")
-    # Make sure to run headed.
-    browser = p.chromium.launch(headless=False,
+    headless=False	# This works
+#    headless=True	# fails due to https2 protocol error
+#    # Make sure to run headed.
+    # Use headless browser under xvfd. Run first: Xvfb :99 -screen 0 1024x768x16 & export DISPLAY=:99
+    browser = p.chromium.launch(headless=headless,
                                 args=args
                                 )
 
     # Setup context however you like.
-    context = browser.new_context() # Pass any options
+    context = browser.new_context(user_agent=ua.random) # Pass any options
     # context.route('**/*', lambda route: route.continue_())
 
     # Pause the page, and start recording manually.
@@ -41,4 +46,5 @@ with sync_playwright() as p:
     print(cookies_json)
     cookies_json['bm_sz'] = None    # Not used anymore but needed
     JSON_CONFIG_FILE.write_text(json.dumps(cookies_json))
-    page.pause()
+    print(f"Updated file {JSON_CONFIG_FILE}")
+#    page.pause()
