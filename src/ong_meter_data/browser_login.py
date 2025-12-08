@@ -26,7 +26,7 @@ def browser_login() -> dict:
     # Espera a que el proceso termine (opcional si ya sabes que ya terminó)
     p.wait()
     # Error code 12345 means MFA code was required
-    if p.errorcode == 12345:
+    if p.returncode == 12345:
         result = dict(mfa=True)
     elif not result:
         # Other unknow error happened
