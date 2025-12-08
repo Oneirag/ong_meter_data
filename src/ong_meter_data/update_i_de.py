@@ -16,6 +16,7 @@ from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer, is_debugging
 from ong_meter_data.eks import run_eks
 from ong_meter_data import JSON_CONFIG_FILE
+from ong_meter_data.browser_login import browser_login
 import json
 import schedule
 
@@ -193,6 +194,18 @@ class IberdrolaSession(object):
                 False, None if there is any connection trouble
                 False, js_response otherwise (can see if there is a need for a captcha, bad password...)
         """
+        js = browser_login()
+        if "JSESSIONID" in js:
+            self.JSESSIONID = js["JSESSIONID"]
+            self.save_config()
+            logger.info("Log in successful")
+            return True, js
+        else:
+            logger.error("Could not login. Review logs to check error")
+            return False, js
+
+
+        
         # raise ValueError("Cannot preform automatic login due to protections")
         json_data = [
             self.USERNAME,
@@ -206,6 +219,7 @@ class IberdrolaSession(object):
             's',
             None,
             None,
+            None,        # New at some unknonw point in 2025
         ]
 
         js, c5 = self.do_request("post", "/consumidores/rest/loginNew/login", json=json_data, return_cookies=True)
@@ -241,6 +255,9 @@ class IberdrolaSession(object):
                 if "captcha" in js_login:
                     min_wait = 30
                     logger.warning(f"Captcha needed, waiting {min_wait} min: {js_login}")
+                    time.sleep(min_wait * 60)  # wait 30 min...
+                if "mfa" in js_login:
+                    logger.warning(f"MFA code needed, waiting {min_wait} min: {js_login}")
                     time.sleep(min_wait * 60)  # wait 30 min...
                 else:
                     min_wait = 5
