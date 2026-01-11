@@ -8,8 +8,13 @@ import json
 from ong_meter_data import JSON_CONFIG_FILE, config, logger
 from fake_useragent import UserAgent
 from playwright.sync_api import sync_playwright, Response
+from enum import StrEnum
 
 ua = UserAgent()
+
+class IDE_URL(StrEnum):
+    HOME = "https://www.i-de.es/consumidores/web/guest/login"
+    COOKIE = "https://www.i-de.es/consumidores/web/home/contract/consumption"
 
 
 with sync_playwright() as p:
@@ -32,7 +37,7 @@ with sync_playwright() as p:
     # Pause the page, and start recording manually.
     page = context.new_page()
     logger.info("Navigating to i-de login page")
-    page.goto("https://www.i-de.es/consumidores/web/guest/login")
+    page.goto(IDE_URL.HOME)
     page.wait_for_load_state("domcontentloaded")
     # Close cookies maessage
     logger.info("Filling username and password")
@@ -98,7 +103,9 @@ with sync_playwright() as p:
     # Close popup (if found)
     #page.keyboard.press("Escape")
     logger.info("Navigating to a page for getting cookie")
-    page.locator("app-consumption-history-module").get_by_role("link", name="Ver detalle >").click(force=True)
+    # page.locator("app-consumption-history-module").get_by_role("link", name="Ver detalle >").click(force=True)
+    page.goto(IDE_URL.COOKIE)
+    page.wait_for_load_state("domcontentloaded")
     cookies_dict = {c['name']: c['value'] for c in context.cookies()}
     cookies_json = {k: v for k, v in cookies_dict.items() if k in ("JSESSIONID", "mb_sz")}
     logger.info("Cookie found, writing to file")
