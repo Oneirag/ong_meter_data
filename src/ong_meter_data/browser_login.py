@@ -1,10 +1,11 @@
 import subprocess
 from pathlib import Path
 import json
+import sys
 
 def browser_login() -> dict:
     # Ejemplo con un comando que genera líneas cada segundo
-    cmd = "xvfb-run python -m ong_meter_data.update_cookies_playwright"
+    cmd = f"xvfb-run {sys.executable} -m ong_meter_data.update_cookies_playwright"
     p = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
