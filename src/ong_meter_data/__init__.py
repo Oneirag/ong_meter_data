@@ -4,10 +4,12 @@ from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer
 from functools import lru_cache
 
-__version__ = "0.0.8"
+__version__ = "0.0.9"
 
 timer = OngTimer(False)
 _util = OngConfig("ong_meter_data", cfg_filename="ong_config.yml")
+USER = _util.config("i-de_usr")
+PASSWORD = _util.config("i-de_pwd")
 logger = _util.logger
 config = _util.config
 http = create_pool_manager(None)
