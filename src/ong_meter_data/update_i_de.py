@@ -138,7 +138,7 @@ class IberdrolaSession(object):
             logger.info("Status: {}".format(js))
             return True
 
-    def read_monthly_history(self, sensor_name: str, when=None, frecuencia="dias", acumular="false") -> list:
+    def read_monthly_history_old(self, sensor_name: str, when=None, frecuencia="dias", acumular="false") -> list:
         """
         Reads historical hourly data from meter
         :param sensor_name: name of sensor for writing in DB
@@ -186,6 +186,54 @@ class IberdrolaSession(object):
                 values = list(float(f) for f in row.values[not_nan])
                 retval.append((_bucket, sensor_name, keys, values, idx_ts))
         return retval
+
+    def read_monthly_history(self, sensor_name: str, when=None, frecuencia="dias", acumular="false") -> list:
+        """
+        Reads historical hourly data from meter
+        :param sensor_name: name of sensor for writing in DB
+        :param when: date from which data will be read. Data will be read from month start to month end of this date. If
+        when is None (default) today is used as reference date so this month's date will be read
+        :param frecuencia: frequency for accumulation in spanish ("dias" as default, meaning days)
+        :param acumular: whether accumulate or not in spanish ("false" as default)
+        :return: a list of tuples for use in OngTsdbClient.write
+        """
+        when = when or pd.Timestamp.today()
+        dt_from = when.normalize().replace(day=1)         # month start
+        dt_to = dt_from + pd.tseries.offsets.MonthEnd(1)  + pd.tseries.offsets.Day(1) - pd.offsets.Second(1)  # month end
+        urls = {"Consumo": "/consumidores/rest/consumoNew/obtenerDatosConsumoDH/{start_date}/{end_date}/horas/USU/",
+                "ConsumoFacturado": "/consumidores/rest/consumoNew/obtenerDatosConsumoFacturado/numFactura/null//fechaDesde//{start_date}00:00:00//fechaHasta//{end_date}23:59:00/true/"}
+        df = pd.DataFrame(columns=urls.keys())
+        str_dt_from = dt_from.strftime("%d-%m-%Y")
+        str_dt_to = dt_to.strftime("%d-%m-%Y")
+        
+        for column, url_template in urls.items():
+            if url_template is None:    
+                continue
+            url = url_template.format(
+                start_date=str_dt_from, end_date=str_dt_to 
+            )
+            js = self.do_request("get", url)
+            if isinstance(js, dict):
+                consumo = js['y']['data'][0]
+            else:
+                consumo = js[0]['valores']
+            fecha_dato = dt_from
+            if consumo:
+                for index, data_point in enumerate(consumo):
+                    # logger.info(f"{index=} {data_point=}")
+                    if data_point:
+                        df.loc[fecha_dato.value, column] = data_point
+                    fecha_dato += pd.to_timedelta(1, unit='h')
+
+        retval = list()
+        for idx_ts, row in df.iterrows():
+            not_nan = ~row.isna()
+            if not_nan.any():
+                keys = list(row.keys()[not_nan])
+                values = list(float(f) for f in row.values[not_nan])
+                retval.append((_bucket, sensor_name, keys, values, idx_ts))
+        return retval
+
 
     def _do_login(self) -> tuple:
         """
