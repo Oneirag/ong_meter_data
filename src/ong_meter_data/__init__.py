@@ -4,7 +4,7 @@ from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer
 from functools import lru_cache
 
-__version__ = "0.0.10"
+__version__ = "0.0.11"
 
 timer = OngTimer(False)
 _util = OngConfig("ong_meter_data", cfg_filename="ong_config.yml")

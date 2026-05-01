@@ -20,8 +20,26 @@ from ong_meter_data.browser_login import browser_login
 import json
 import schedule
 
+from dataclasses import dataclass
+
+@dataclass
+class SensorConfig:
+    name: str
+    url_template: str
+    metric: str
+    period: str = "1h"
+    
+_sensors = [
+    SensorConfig(name="i-de_consumo_1h", 
+                 url_template="/consumidores/rest/consumoNew/obtenerDatosConsumoDH/{start_date}/{end_date}/horas/USU/",
+                 metric="Consumo"),
+    SensorConfig(name="i-de_facturado_1h", 
+                 url_template="/consumidores/rest/consumoNew/obtenerDatosConsumoFacturado/numFactura/null//fechaDesde//{start_date}00:00:00//fechaHasta//{end_date}23:59:00/true/",
+                 metric="ConsumoFacturado"),
+]
+
 _bucket = config('bucket')
-_sensors = dict(sensor_1h="i-de_1h", sensor_1s="i-de_1s", sensor_15m="i-de_15m")
+
 URL_BASE = "https://www.i-de.es"
 SECONDS_SLEEP = 60 * 10     # 10 min
 
@@ -45,14 +63,16 @@ class IberdrolaSession(object):
             raise ValueError(error_msg)
 
         json_config = json.loads(JSON_CONFIG_FILE.read_text())
+        self.user_agent = json_config.pop("user_agent")
 
         self.JSESSIONID = json_config["JSESSIONID"]
         self.bm_sz = json_config.get("bm_sz")
         self.next_keep_session = 0      # timestamp for a next keep session request MUST be sent
         self.requests_session = requests.session()
-        self.requests_session.cookies.update({"JSESSIONID": self.JSESSIONID})
-        if self.bm_sz:
-            self.requests_session.cookies.update({"bm_sz": self.bm_sz})
+        self.requests_session.cookies.update(json_config)
+        #self.requests_session.cookies.update({"JSESSIONID": self.JSESSIONID})
+        #if self.bm_sz:
+        #    self.requests_session.cookies.update({"bm_sz": self.bm_sz})
 
 
     def save_config(self):
@@ -80,8 +100,12 @@ class IberdrolaSession(object):
             'sec-fetch-dest': 'empty',
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-origin',
-            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            #'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'user-agent': self.user_agent
         }
+        
+        
+        
         return headers
 
     def do_request(self, method: str, url: str, headers: dict = None, when=None, json=None, return_cookies=False, **kwargs):
@@ -125,7 +149,7 @@ class IberdrolaSession(object):
         Returns OK if session is opened, False if a new login is needed"""
         if self.bm_sz:
             logger.info(f"Run eks: {run_eks(self.requests_session)}")
-        now = pd.Timestamp.utcnow().timestamp()
+        now = pd.Timestamp.now(tz="UTC").timestamp()
         if now < self.next_keep_session:
             return True         # avoid unnecessary log ins
         js, cookies = self.do_request("post", '/consumidores/rest/loginNew/mantenerSesion/',
@@ -138,59 +162,10 @@ class IberdrolaSession(object):
             logger.info("Status: {}".format(js))
             return True
 
-    def read_monthly_history_old(self, sensor_name: str, when=None, frecuencia="dias", acumular="false") -> list:
+    def read_monthly_history(self, sensor: SensorConfig, when=None, frecuencia="dias", acumular="false") -> list:
         """
         Reads historical hourly data from meter
-        :param sensor_name: name of sensor for writing in DB
-        :param when: date from which data will be read. Data will be read from month start to month end of this date. If
-        when is None (default) today is used as reference date so this month's date will be read
-        :param frecuencia: frequency for accumulation in spanish ("dias" as default, meaning days)
-        :param acumular: whether accumulate or not in spanish ("false" as default)
-        :return: a list of tuples for use in OngTsdbClient.write
-        """
-        # when_str = "03-10-201800:00:00"
-        when = when or pd.Timestamp.today()
-        dt_from = when.normalize().replace(day=1)         # month start
-        dt_to = dt_from + pd.tseries.offsets.MonthEnd(1)  + pd.tseries.offsets.Day(1) - pd.offsets.Second(1)  # month end
-        when_str = when.strftime("%d-%m-%Y00:00:00")
-        mask_url_consumo_facturado = "/consumidores/rest/consumoNew" \
-                                     "/obtenerDatosConsumoFacturado/numFactura/null/fechaDesde/{desde}/fechaHasta/{hasta}/"
-        mask_url_consumo = "/consumidores/rest/consumoNew/" \
-                           "obtenerDatosConsumo/fechaInicio/{fechainicio}/colectivo/USU/frecuencia/{frecuencia}/" \
-                           "acumular/{acumular}/"
-        url_consumo = mask_url_consumo.format(fechainicio=when_str, frecuencia=frecuencia, acumular=acumular)
-        url_consumo_facturado = mask_url_consumo_facturado.format(
-            desde=dt_from.strftime("%d-%m-%Y00:00:00"),
-            hasta=dt_to.strftime("%d-%m-%Y23:59:59"),
-        )
-        urls = {"Consumo": url_consumo, "ConsumoFacturado": url_consumo_facturado}
-        df = pd.DataFrame(columns=urls.keys())
-
-        for column, url in urls.items():
-            js = self.do_request("get", url + "?_{timestamp}".format(
-                timestamp=get_timestamp()))
-            if js:
-                fecha_dato = datetime.strptime(js['fechaPeriodo'], "%d-%m-%Y%H:%M:%S")
-                fecha_dato = pd.Timestamp(fecha_dato).replace(hour=0).tz_localize(LOCAL_TZ)
-                for dt in js['y']['data']:
-                    for index, data_point in enumerate(dt):
-                        # logger.info(f"{index=} {data_point=}")
-                        if data_point:
-                            df.loc[fecha_dato.value, column] = data_point['valor']
-                        fecha_dato += pd.to_timedelta(1, unit='h')
-        retval = list()
-        for idx_ts, row in df.iterrows():
-            not_nan = ~row.isna()
-            if not_nan.any():
-                keys = list(row.keys()[not_nan])
-                values = list(float(f) for f in row.values[not_nan])
-                retval.append((_bucket, sensor_name, keys, values, idx_ts))
-        return retval
-
-    def read_monthly_history(self, sensor_name: str, when=None, frecuencia="dias", acumular="false") -> list:
-        """
-        Reads historical hourly data from meter
-        :param sensor_name: name of sensor for writing in DB
+        :param sensor: SensorConfig object with name and url_template for reading data
         :param when: date from which data will be read. Data will be read from month start to month end of this date. If
         when is None (default) today is used as reference date so this month's date will be read
         :param frecuencia: frequency for accumulation in spanish ("dias" as default, meaning days)
@@ -200,30 +175,27 @@ class IberdrolaSession(object):
         when = when or pd.Timestamp.today()
         dt_from = when.normalize().replace(day=1)         # month start
         dt_to = dt_from + pd.tseries.offsets.MonthEnd(1)  + pd.tseries.offsets.Day(1) - pd.offsets.Second(1)  # month end
-        urls = {"Consumo": "/consumidores/rest/consumoNew/obtenerDatosConsumoDH/{start_date}/{end_date}/horas/USU/",
-                "ConsumoFacturado": "/consumidores/rest/consumoNew/obtenerDatosConsumoFacturado/numFactura/null//fechaDesde//{start_date}00:00:00//fechaHasta//{end_date}23:59:00/true/"}
-        df = pd.DataFrame(columns=urls.keys())
+        df = pd.DataFrame(columns=[sensor.metric])
         str_dt_from = dt_from.strftime("%d-%m-%Y")
         str_dt_to = dt_to.strftime("%d-%m-%Y")
         
-        for column, url_template in urls.items():
-            if url_template is None:    
-                continue
-            url = url_template.format(
-                start_date=str_dt_from, end_date=str_dt_to 
-            )
-            js = self.do_request("get", url)
-            if isinstance(js, dict):
-                consumo = js['y']['data'][0]
-            else:
-                consumo = js[0]['valores']
-            fecha_dato = dt_from
-            if consumo:
-                for index, data_point in enumerate(consumo):
-                    # logger.info(f"{index=} {data_point=}")
-                    if data_point:
-                        df.loc[fecha_dato.value, column] = data_point
-                    fecha_dato += pd.to_timedelta(1, unit='h')
+        url = sensor.url_template.format(
+            start_date=str_dt_from, end_date=str_dt_to 
+        )
+        js = self.do_request("get", url)
+        if isinstance(js, dict):
+            consumo = js['y']['data'][0]
+        else:
+            consumo = js[0]['valores']
+        fecha_dato = dt_from
+        if consumo:
+            for index, data_point in enumerate(consumo):
+                # logger.info(f"{index=} {data_point=}")
+                if isinstance(data_point, dict):
+                    data_point = data_point.get("valor")
+                if data_point:
+                    df.loc[fecha_dato.value, sensor.metric] = data_point
+                fecha_dato += pd.to_timedelta(1, unit='h')
 
         retval = list()
         for idx_ts, row in df.iterrows():
@@ -231,7 +203,7 @@ class IberdrolaSession(object):
             if not_nan.any():
                 keys = list(row.keys()[not_nan])
                 values = list(float(f) for f in row.values[not_nan])
-                retval.append((_bucket, sensor_name, keys, values, idx_ts))
+                retval.append((_bucket, sensor.name, keys, values, idx_ts))
         return retval
 
 
@@ -349,106 +321,48 @@ def read_historical_meter_reading(session: IberdrolaSession, ongtsdb_client: Ong
     :param ongtsdb_client: an already initialized OngTsdbClient, where data will be writen
     :return: True if data could be read and write, false otherwise
     """
-    sensor_meter = _sensors['sensor_1h']
-    date = ongtsdb_client.get_lasttimestamp(_bucket, sensor_meter)
-    if not date:
-        date = pd.Timestamp.now(tz=LOCAL_TZ).normalize() - pd.tseries.offsets.YearBegin(4)  # 4 year's history
-    else:
-        # Convert from timestamp to date + 3600s
-        date = pd.Timestamp.utcfromtimestamp(date).tz_convert("UTC").astimezone(LOCAL_TZ) + \
-               pd.tseries.offsets.Hour(1)
-    now = pd.Timestamp.now(tz=LOCAL_TZ).normalize()
-    month_start = now.replace(day=1)
-    if now.minute < 2 and now.hour < 4 or True:
-        for when in pd.date_range(min(date, month_start),
-                                  pd.Timestamp.now(tz=LOCAL_TZ) + pd.offsets.MonthEnd(1), freq="MS"):
-            sequence = session.read_monthly_history(sensor_meter, when)
-            if sequence:
-                ongtsdb_client.write(sequence)
-                logger.info(f"Historical data for month {when} saved")
+    for sensor in _sensors:
+        date = ongtsdb_client.get_lasttimestamp(_bucket, sensor.name)
+        if not date:
+            date = pd.Timestamp("2018-01-01", tz=LOCAL_TZ).normalize()  # Story starts in 2018
+        else:
+            # Convert from timestamp to date + 3600s
+            date = pd.Timestamp.fromtimestamp(date, tz=LOCAL_TZ) + pd.tseries.offsets.Hour(1)
+        now = pd.Timestamp.now(tz=LOCAL_TZ).normalize()
+        month_start = now.replace(day=1)
+        if now.minute < 2 and now.hour < 4 or True:
+            for when in pd.date_range(min(date, month_start),
+                                    pd.Timestamp.now(tz=LOCAL_TZ) + pd.offsets.MonthEnd(1), freq="MS"):
+                sequence = session.read_monthly_history(sensor, when)
+                if sequence:
+                    ongtsdb_client.write(sequence)
+                    logger.info(f"Historical data for {sensor.name} in month {when} saved")
     return True
 
 
-def read_current_meter_reading(session: IberdrolaSession, ongtsdb_client: OngTsdbClient, retries: int = 4) -> bool:
-    """
-    Reads current meter reading from i-de meter and stores into ong_tsdb database. If data could not be read
-    then retries after 30s of sleep
-    :param session: an already opened IberdrolaSession object , from where data will be read
-    :param ongtsdb_client: an already initialized OngTsdbClient, where data will be writen
-    :param retries: number of retries if data is invalid
-    :return: True if data could be read and write, false otherwise
-    """
-    for retry_meter in range(retries):
-        attempt = retry_meter + 1
-        now_ts = pd.Timestamp.now(tz=LOCAL_TZ).value
-        with OngTimer(msg=f"Reading meter {attempt=}", logger=logger, log_level=logging.INFO):
-            res = session.read_meter()
-        if isinstance(res, dict):
-            logger.info(f"{attempt=}: Meter read from i-de meter: {res}")
-            # valor = float(res.get('valMagnitud', -1))
-            meter_reading = float(res.get('valLecturaContador', -1))
-            sensor_meter = _sensors['sensor_1h']
-            if meter_reading > 0:
-                if ongtsdb_client.write(
-                        [f"{_bucket},sensor={sensor_meter} LecturaContador={meter_reading} {now_ts}"]):
-                    # Write also in the 15 min sensor (to better know when it was written)
-                    ongtsdb_client.write(
-                        [f"{_bucket},sensor={_sensors['sensor_15m']} LecturaContador={meter_reading} {now_ts}"])
-                    logger.info(f"{attempt=}: Data writen to ong_tsdb database ok")
-                    return True
-            else:
-                logger.error(f"{attempt=}: Could not write i-de meter data, dictionary data invalid")
-        else:
-            logger.error(f"{attempt=}: Invalid data read from i-de meter: {res}")
-        session.keep_login()
-        time.sleep((attempt + 1) * 30)  # increase sleep time each retry, 30 additional seconds
-    return False
-
-
 if __name__ == "__main__":
-    def keep_login_job():
-        ongtsdb_client = OngTsdbClient(url=config('url'), token=config('admin_token'), validate_server_version=False)
-        ongtsdb_client.create_db(_bucket)
-        for sensor in _sensors.values():
-            ongtsdb_client.create_sensor(_bucket, sensor, sensor.split("_")[1], metrics=list(),
-                                         read_key=config('read_token'), write_key=config('write_token'))
-        session = IberdrolaSession()
+    
+    ongtsdb_client = OngTsdbClient(url=config('url'), token=config('admin_token'), validate_server_version=False)
+    ongtsdb_client.create_db(_bucket)
+    for sensor in _sensors:
+        ongtsdb_client.create_sensor(_bucket, sensor.name, sensor.period, metrics=[sensor.metric],
+                                        read_key=config('read_token'), write_key=config('write_token'))
+    
+    session = IberdrolaSession()
+    
+    def keep_login_job(ongtsdb_client: OngTsdbClient, session: IberdrolaSession):
         login_ok = session.keep_login()
         logger.info(f"Login ok: {login_ok}")
 
-    def historical_job():
-        ongtsdb_client = OngTsdbClient(url=config('url'), token=config('admin_token'), validate_server_version=False)
-        ongtsdb_client.create_db(_bucket)
-        for sensor in _sensors.values():
-            ongtsdb_client.create_sensor(_bucket, sensor, sensor.split("_")[1], metrics=list(),
-                                         read_key=config('read_token'), write_key=config('write_token'))
-        session = IberdrolaSession()
+    def historical_job(ongtsdb_client: OngTsdbClient, session: IberdrolaSession):
         login_ok = session.keep_login()
         read_historical_meter_reading(session, ongtsdb_client)
         logger.info(f"Historical data read")
 
     schedule.every(4).minutes.do(keep_login_job)
     schedule.every(6).hours.do(historical_job)
-    keep_login_job()
-    historical_job()
+    keep_login_job(ongtsdb_client, session)
+    historical_job(ongtsdb_client, session)
     while True:
         schedule.run_pending()
         time.sleep(1)
-
-    exit(0)
-
-    start_ts = pd.Timestamp.now()
-    while True:
-        now = pd.Timestamp.now()
-        if (now - start_ts).seconds > 60 * 60 * 5:      # Give up after 5 hours
-            logger.error(f"Started at {start_ts}, cannot connect after 5h, giving up.")
-            break
-        login_ok = session.keep_login()
-
-        if now.minute < 15 or is_debugging():
-            read_historical_meter_reading(session, ongtsdb_client)
-        if read_current_meter_reading(session, ongtsdb_client):
-            notify()
-            break       # Exit while loop on successful read
-        time.sleep(SECONDS_SLEEP)
-        logger.info(f"Retrying after {SECONDS_SLEEP}")

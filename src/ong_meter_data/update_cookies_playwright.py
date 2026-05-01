@@ -11,6 +11,8 @@ from playwright.sync_api import sync_playwright, Response
 from enum import StrEnum
 
 ua = UserAgent()
+user_agent = ua.random
+
 
 class IDE_URL(StrEnum):
     HOME = "https://www.i-de.es/consumidores/web/guest/login"
@@ -31,7 +33,7 @@ with sync_playwright() as p:
                                 )
 
     # Setup context however you like.
-    context = browser.new_context(user_agent=ua.random) # Pass any options
+    context = browser.new_context(user_agent=user_agent) # Pass any options
     # context.route('**/*', lambda route: route.continue_())
 
     # Pause the page, and start recording manually.
@@ -107,7 +109,8 @@ with sync_playwright() as p:
     page.goto(IDE_URL.COOKIE)
     page.wait_for_load_state("domcontentloaded")
     cookies_dict = {c['name']: c['value'] for c in context.cookies()}
-    cookies_json = {k: v for k, v in cookies_dict.items() if k in ("JSESSIONID", "mb_sz")}
+    cookies_json = {k: v for k, v in cookies_dict.items()} # if k in ("JSESSIONID", "mb_sz", "bm_sv", "_abck")}
+    cookies_json['user_agent'] = user_agent
     logger.info("Cookie found, writing to file")
     print(cookies_json)
     cookies_json['bm_sz'] = None    # Not used anymore but needed
