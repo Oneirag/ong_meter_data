@@ -2,6 +2,7 @@ import subprocess
 from pathlib import Path
 import json
 import sys
+from ong_meter_data import JSON_CONFIG_FILE
 
 def browser_login() -> dict:
     # Ejemplo con un comando que genera líneas cada segundo
@@ -21,11 +22,13 @@ def browser_login() -> dict:
         if line:  # evita que se imprima una línea vacía al final
             if "JSESSIONID" in line:
                 print("[JSON]: ",line)
-                result = json.loads(line.replace("'", '"'))
+                # result = json.loads(line.replace("'", '"'))
             print(f"[STDOUT] {line.rstrip()}")
 
     # Espera a que el proceso termine (opcional si ya sabes que ya terminó)
     p.wait()
+    if JSON_CONFIG_FILE.exists():
+        result = json.loads(JSON_CONFIG_FILE.read_text())
     # Error code 12345 means MFA code was required
     if p.returncode == 12345:
         result = dict(mfa=True)

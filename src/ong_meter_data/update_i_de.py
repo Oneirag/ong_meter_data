@@ -5,16 +5,12 @@ Reads meter data from i-DE (former Iberdrola Distribucion)
 A user name and a password is needed to log in
 """
 import time
-from datetime import datetime
-import logging
-
 import pandas as pd
 import requests
 
 from ong_meter_data import config, logger, LOCAL_TZ
 from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer, is_debugging
-from ong_meter_data.eks import run_eks
 from ong_meter_data import JSON_CONFIG_FILE
 from ong_meter_data.browser_login import browser_login
 import json
@@ -52,33 +48,15 @@ class IberdrolaSession(object):
         self.cups = config("cups")
         self.USERNAME = user_name or config("i-de_usr")
         self.PASSWORD = password or config("i-de_pwd")
-        if not JSON_CONFIG_FILE.exists():
-            error_msg = (f"File {JSON_CONFIG_FILE} does not exist. Cannot proceed with login.\n" +
-                f"Please create it with JSESSIONID and bm_sz cookies from a requests to mantenerSesion or to eks from www.i-de.es.\n"
-                "Minimum content is:\n"
-                f'{{"JSESSIONID": "your_jsessionid", "bm_sz": "your_bm_sz"}}\n' 
-            )
-                
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        json_config = json.loads(JSON_CONFIG_FILE.read_text())
-        self.user_agent = json_config.pop("user_agent")
-
-        self.JSESSIONID = json_config["JSESSIONID"]
-        self.bm_sz = json_config.get("bm_sz")
         self.next_keep_session = 0      # timestamp for a next keep session request MUST be sent
         self.requests_session = requests.session()
-        self.requests_session.cookies.update(json_config)
-        #self.requests_session.cookies.update({"JSESSIONID": self.JSESSIONID})
-        #if self.bm_sz:
-        #    self.requests_session.cookies.update({"bm_sz": self.bm_sz})
-
-
-    def save_config(self):
-        """Dumps JSESSIONID to avoid multiple login that will make captcha to appear"""
-        JSON_CONFIG_FILE.write_text(json.dumps(dict(JSESSIONID=self.JSESSIONID, bm_sz=None)))
-
+        if JSON_CONFIG_FILE.exists():
+            json_config = json.loads(JSON_CONFIG_FILE.read_text())
+            self.user_agent = json_config.pop("user_agent")
+            self.requests_session.cookies.update(json_config)
+        else:
+            self.user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/"
+        
     def get_headers(self) -> dict:
         """
         Returns headers for request, including cookies
@@ -147,8 +125,6 @@ class IberdrolaSession(object):
     def _keep_sesion_opened(self) -> bool:
         """Sends a "keep-alive" request to keep session opened.
         Returns OK if session is opened, False if a new login is needed"""
-        if self.bm_sz:
-            logger.info(f"Run eks: {run_eks(self.requests_session)}")
         now = pd.Timestamp.now(tz="UTC").timestamp()
         if now < self.next_keep_session:
             return True         # avoid unnecessary log ins
@@ -206,6 +182,13 @@ class IberdrolaSession(object):
                 retval.append((_bucket, sensor.name, keys, values, idx_ts))
         return retval
 
+    def _do_logout(self):
+        """Logs out, deleting cookies and config file"""
+        self.do_request("get", "/consumidores/rest/loginNew/logOut")
+        JSON_CONFIG_FILE.unlink(missing_ok=True)
+        self.requests_session.cookies.clear()
+        logger.info("Logged out, cookies cleared")
+
 
     def _do_login(self) -> tuple:
         """
@@ -215,77 +198,12 @@ class IberdrolaSession(object):
                 False, js_response otherwise (can see if there is a need for a captcha, bad password...)
         """
         js = browser_login()
-        if "JSESSIONID" in js:
-            self.JSESSIONID = js["JSESSIONID"]
-            self.save_config()
+        if js and "JSESSIONID" in js:
             logger.info("Log in successful")
             return True, js
         else:
             logger.error("Could not login. Review logs to check error")
             return False, js
-
-
-        
-        # raise ValueError("Cannot preform automatic login due to protections")
-        json_data = [
-            self.USERNAME,
-            self.PASSWORD,
-            None,
-            'Mac OS X 10_15_7',
-            'PC',
-            'Chrome 120.0.0.0',
-            '0',
-            '',
-            's',
-            None,
-            None,
-            None,        # New at some unknonw point in 2025
-        ]
-
-        js, c5 = self.do_request("post", "/consumidores/rest/loginNew/login", json=json_data, return_cookies=True)
-        if js is None:
-            return False, None
-        if "success" not in js:
-            if "captcha" in js:
-                logger.info("Captcha needed")
-                # exit(2)  # Need for a captcha...nothing to do here
-            else:
-                logger.info(f"Login invalid for unknown reasons: {js}")
-            return False, js
-        if js["success"] != "true":
-            return False, js
-        self.JSESSIONID = c5["JSESSIONID"]
-        self.save_config()
-        logger.info("Log in successful")
-        return True, js
-
-    def keep_login(self) -> bool:
-        """Does (or keeps) login"""
-        keep_ok = self._keep_sesion_opened()
-        if keep_ok:
-            return True
-
-        for errores_captcha in range(3):
-            login_ok, js_login = self._do_login()
-            if login_ok:
-                logger.info(f"Session opened: {js_login}")
-                self._keep_sesion_opened()
-                return True
-            elif js_login:
-                if "captcha" in js_login:
-                    min_wait = 30
-                    logger.warning(f"Captcha needed, waiting {min_wait} min: {js_login}")
-                    time.sleep(min_wait * 60)  # wait 30 min...
-                if "mfa" in js_login:
-                    logger.warning(f"MFA code needed, waiting {min_wait} min: {js_login}")
-                    time.sleep(min_wait * 60)  # wait 30 min...
-                else:
-                    min_wait = 5
-                    logger.warning(f"Log in failed for unknown reason, waiting {min_wait} min: {js_login}")
-                    time.sleep(min_wait * 60)  # wait 5 min...
-
-        logger.critical("Could not log in")
-        exit(-1)
 
     def read_meter(self):
         """Reads instantaneous values from meter"""
@@ -331,7 +249,7 @@ def read_historical_meter_reading(session: IberdrolaSession, ongtsdb_client: Ong
         now = pd.Timestamp.now(tz=LOCAL_TZ).normalize()
         month_start = now.replace(day=1)
         if now.minute < 2 and now.hour < 4 or True:
-            for when in pd.date_range(min(date, month_start),
+            for when in pd.date_range(min(date, month_start).replace(day=1),
                                     pd.Timestamp.now(tz=LOCAL_TZ) + pd.offsets.MonthEnd(1), freq="MS"):
                 sequence = session.read_monthly_history(sensor, when)
                 if sequence:
@@ -350,19 +268,18 @@ if __name__ == "__main__":
     
     session = IberdrolaSession()
     
-    def keep_login_job(ongtsdb_client: OngTsdbClient, session: IberdrolaSession):
-        login_ok = session.keep_login()
-        logger.info(f"Login ok: {login_ok}")
-
     def historical_job(ongtsdb_client: OngTsdbClient, session: IberdrolaSession):
-        login_ok = session.keep_login()
+        if not session._keep_sesion_opened():
+            login_ok, _ = session._do_login()
+            if not login_ok:
+                logger.error("Cannot do historical data read because login failed")
+                return
         read_historical_meter_reading(session, ongtsdb_client)
         logger.info(f"Historical data read")
+        session._do_logout()
 
-    schedule.every(4).minutes.do(keep_login_job)
-    schedule.every(6).hours.do(historical_job)
-    keep_login_job(ongtsdb_client, session)
     historical_job(ongtsdb_client, session)
+    schedule.every().day.at("16:42", "Europe/Madrid").do(historical_job)
     while True:
         schedule.run_pending()
         time.sleep(1)
