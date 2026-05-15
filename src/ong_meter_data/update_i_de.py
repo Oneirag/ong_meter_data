@@ -159,6 +159,9 @@ class IberdrolaSession(object):
             start_date=str_dt_from, end_date=str_dt_to 
         )
         js = self.do_request("get", url)
+        if not js:
+            logger.error(f"Error reading historical data for {sensor.name} in month {when}: no response")
+            return []
         if isinstance(js, dict):
             consumo = js['y']['data'][0]
         else:
