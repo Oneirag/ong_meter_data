@@ -282,7 +282,7 @@ if __name__ == "__main__":
         session._do_logout()
 
     historical_job(ongtsdb_client, session)
-    schedule.every().day.at("16:42", "Europe/Madrid").do(historical_job)
+    schedule.every().day.at("16:42", "Europe/Madrid").do(historical_job, ongtsdb_client, session)
     while True:
         schedule.run_pending()
         time.sleep(1)
