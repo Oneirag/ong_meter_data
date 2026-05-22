@@ -45,19 +45,25 @@ class IberdrolaSession(object):
             raise ValueError(error_msg)
 
         json_config = json.loads(JSON_CONFIG_FILE.read_text())
-
-        self.JSESSIONID = json_config["JSESSIONID"]
-        self.bm_sz = json_config.get("bm_sz")
+        if not json_config.get("cookies") or not json_config.get("headers"):
+            self.JSESSIONID = json_config.get("JSESSIONID")
+            cookies = {"JSESSIONID": self.JSESSIONID}
+            headers = {}
+        else:
+            cookies = json_config.get("cookies", {})
+            headers = json_config.get("headers", {})
+            self.JSESSIONID = cookies["JSESSIONID"]
+        self.user_agent = headers.get("user-agent")
         self.next_keep_session = 0      # timestamp for a next keep session request MUST be sent
         self.requests_session = requests.session()
-        self.requests_session.cookies.update({"JSESSIONID": self.JSESSIONID})
-        if self.bm_sz:
-            self.requests_session.cookies.update({"bm_sz": self.bm_sz})
+        #self.requests_session.cookies.update({"JSESSIONID": self.JSESSIONID.get("cookies")})
+        self.requests_session.cookies.update(cookies)
 
 
     def save_config(self):
         """Dumps JSESSIONID to avoid multiple login that will make captcha to appear"""
-        JSON_CONFIG_FILE.write_text(json.dumps(dict(JSESSIONID=self.JSESSIONID, bm_sz=None)))
+        # JSON_CONFIG_FILE.write_text(json.dumps(dict(JSESSIONID=self.JSESSIONID, bm_sz=None)))
+        JSON_CONFIG_FILE.write_text(json.dumps(cookies=self.requests_session.cookies, headers=self.requests_session.headers))
 
     def get_headers(self) -> dict:
         """
@@ -82,6 +88,7 @@ class IberdrolaSession(object):
             'sec-fetch-site': 'same-origin',
             'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
+        headers["user-agent"] = self.user_agent or headers["user-agent"]
         return headers
 
     def do_request(self, method: str, url: str, headers: dict = None, when=None, json=None, return_cookies=False, **kwargs):
@@ -123,8 +130,6 @@ class IberdrolaSession(object):
     def _keep_sesion_opened(self) -> bool:
         """Sends a "keep-alive" request to keep session opened.
         Returns OK if session is opened, False if a new login is needed"""
-        if self.bm_sz:
-            logger.info(f"Run eks: {run_eks(self.requests_session)}")
         now = pd.Timestamp.utcnow().timestamp()
         if now < self.next_keep_session:
             return True         # avoid unnecessary log ins
