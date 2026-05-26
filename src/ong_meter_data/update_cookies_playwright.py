@@ -1,17 +1,15 @@
 """
 Opens i-de website in a browser, gets cookies from it and writes them to the config file
 """
+
 import os
+
 print(os.getenv("PYTHONPATH"))
 from time import sleep
 import json
 from ong_meter_data import JSON_CONFIG_FILE, config, logger
-from fake_useragent import UserAgent
 from playwright.sync_api import sync_playwright, Response
 from enum import StrEnum
-
-ua = UserAgent()
-user_agent = ua.random
 
 
 class IDE_URL(StrEnum):
@@ -23,17 +21,15 @@ with sync_playwright() as p:
     args = []
     # disable navigator.webdriver:true flag
     args.append("--disable-blink-features=AutomationControlled")
-    headless=False	# This works
-#    headless=True	# fails due to https2 protocol error
-#    # Make sure to run headed.
+    headless = False  # This works
+    #    headless=True	# fails due to https2 protocol error
+    #    # Make sure to run headed.
     # Use headless browser under xvfd. Run first: Xvfb :99 -screen 0 1024x768x16 & export DISPLAY=:99
     logger.info("Opening web browser")
-    browser = p.chromium.launch(headless=headless,
-                                args=args
-                                )
+    browser = p.chromium.launch(headless=headless, args=args)
 
     # Setup context however you like.
-    context = browser.new_context(user_agent=user_agent) # Pass any options
+    context = browser.new_context()
     # context.route('**/*', lambda route: route.continue_())
 
     # Pause the page, and start recording manually.
@@ -55,11 +51,13 @@ with sync_playwright() as p:
         # Si el status indica error, lo guardamos
         logger.debug(response)
         if response.status >= 400:
-            errors.append({
-                "url": response.url,
-                "status": response.status,
-                "method": response.request.method
-            })
+            errors.append(
+                {
+                    "url": response.url,
+                    "status": response.status,
+                    "method": response.request.method,
+                }
+            )
 
     page.on("response", handle_response)
     # 3️⃣ Esperamos que la página cargue lo necesario (puedes ajustar la espera)
@@ -68,11 +66,13 @@ with sync_playwright() as p:
     # 4️⃣ Revisamos si hubo errores
     if errors:
         for err in errors:
-            logger.error(f"❌ Petición fallida: {err['method']} {err['url']} -> {err['status']}")
+            logger.error(
+                f"❌ Petición fallida: {err['method']} {err['url']} -> {err['status']}"
+            )
         # Opcional: lanzar excepción para que el test falle
         raise AssertionError(f"{len(errors)} peticiones HTTP fallaron.")
     else:
-        logger.info("Todas las peticiones HTTP de login fueron exitosas.")    
+        logger.info("Todas las peticiones HTTP de login fueron exitosas.")
     errors = []
 
     logger.info("Checking for MFA code")
@@ -83,7 +83,7 @@ with sync_playwright() as p:
         if not os.environ.get("I_DE_INTERACTIVE"):
             logger.error("Not interactive session, MFA code requested, could not login")
             exit(12345)
-        sms_code=input("Code received by sms: ")
+        sms_code = input("Code received by sms: ")
         page.get_by_role("textbox", name="Código SMS").fill(sms_code)
         page.get_by_role("button", name="Aceptar").click()
     else:
@@ -92,7 +92,7 @@ with sync_playwright() as p:
     page.wait_for_load_state("domcontentloaded")
     # page.wait_for_load_state("networkidle", timeout=60000)  # Extend timeout
     # page.wait_for_url("")
-    sleep(5)    # Hardcoded sleep, as others don't work
+    sleep(5)  # Hardcoded sleep, as others don't work
     logger.info("Login page found. Closing any modal popup")
     for i_dialog in reversed(range(5)):
         dialog = page.locator(f"#mat-dialog-{i_dialog}")
@@ -100,21 +100,34 @@ with sync_playwright() as p:
             logger.info(f"Closing modal popup #{i_dialog}")
             dialog.get_by_role("img").nth(0).click()
             page.keyboard.press("Escape")
-        sleep(.1)
+        sleep(0.1)
     # page.pause()
     # Close popup (if found)
-    #page.keyboard.press("Escape")
+    page.keyboard.press("Escape")
     logger.info("Navigating to a page for getting cookie")
     # page.locator("app-consumption-history-module").get_by_role("link", name="Ver detalle >").click(force=True)
-    page.goto(IDE_URL.COOKIE)
+    # page.locator("a").filter(has_text="Monitor de consumo").click(force=True, timeout=5000)
+    # #page.goto(IDE_URL.COOKIE)
     page.wait_for_load_state("domcontentloaded")
-    cookies_dict = {c['name']: c['value'] for c in context.cookies()}
-    cookies_json = {k: v for k, v in cookies_dict.items()} # if k in ("JSESSIONID", "mb_sz", "bm_sv", "_abck")}
-    cookies_json['user_agent'] = user_agent
+    all_cookies = context.cookies()
+    browser_ua = page.evaluate("navigator.userAgent")
+    cookies_json = {
+        "cookies": {
+            c["name"]: c["value"]
+            for c in all_cookies
+            if c["name"] in ("JSESSIONID", "mb_sz")
+        },
+        "all_jsessionid": [
+            {"value": c["value"], "domain": c["domain"], "path": c["path"]}
+            for c in all_cookies
+            if c["name"] == "JSESSIONID"
+        ],
+        "headers": {"user-agent": browser_ua},
+        "bm_sz": None,
+    }
     logger.info("Cookie found, writing to file")
     print(cookies_json)
-    cookies_json['bm_sz'] = None    # Not used anymore but needed
     JSON_CONFIG_FILE.write_text(json.dumps(cookies_json))
     logger.info(f"Updated file {JSON_CONFIG_FILE}")
-#    page.pause()
+    # page.pause()
     exit(1)
