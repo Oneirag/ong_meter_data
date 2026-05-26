@@ -15,3 +15,6 @@ tuya-connector-python   # For accessing tuya devices from cloud
 # to avoid problems with headless browser and i-de
 fake-useragent
 playwright
+
+# External library for i-de
+git+https://github.com/Oneirag/python-oligo.git

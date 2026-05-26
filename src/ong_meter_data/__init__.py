@@ -3,8 +3,9 @@ from pathlib import Path
 from ong_tsdb.client import OngTsdbClient
 from ong_utils import OngTimer
 from functools import lru_cache
+import json
 
-__version__ = "0.0.10"
+__version__ = "0.2.01"
 
 timer = OngTimer(False)
 _util = OngConfig("ong_meter_data", cfg_filename="ong_config.yml")
@@ -20,6 +21,14 @@ __COOKIES_FILE = "i-de_cookies.json"
 config_file_path = Path("~/.config/ongpi/").expanduser()
 config_file_path.mkdir(parents=True, exist_ok=True)
 JSON_CONFIG_FILE = config_file_path / __COOKIES_FILE
+try:
+    json_config = json.loads(JSON_CONFIG_FILE.read_text())
+except FileNotFoundError:
+    logger.warning(f"Config file {JSON_CONFIG_FILE} not found")
+    json_config = {}
+except Exception as e:
+    logger.warning(f"Error reading config file: {e}")
+    json_config = {}
 
 _bucket = config('bucket')
 
