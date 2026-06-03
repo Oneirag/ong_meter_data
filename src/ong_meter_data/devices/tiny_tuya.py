@@ -1,7 +1,9 @@
 import time
-
-from tinytuya.Contrib.WiFiDualMeterDevice import WiFiDualMeterDevice
-from tuya_connector import TuyaOpenAPI
+try:
+    from tinytuya.Contrib.WiFiDualMeterDevice import WiFiDualMeterDevice
+    from tuya_connector import TuyaOpenAPI
+except ImportError as e:
+    raise ImportError("tinytuya and tuya-connector libraries are required for TinyTuyaDevice. Install them with pip install tinytuya tuya-connector") from e
 
 from ong_meter_data import logger
 from ong_meter_data.devices.base import MeteringDevice

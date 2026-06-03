@@ -17,7 +17,7 @@ _SENSORS = [
     {"name": "i-de_consumo_1h", "method": "consumption", "metric": "Consumo"},
     {
         "name": "i-de_facturado_1h",
-        "method": "consumption_facturado",
+        "method": "billed_consumption",
         "metric": "ConsumoFacturado",
     },
 ]
@@ -99,7 +99,7 @@ def read_current(iber, client):
 
 def historical_job(client):
     iber = Iber()
-    iber.login()
+    iber.login(user=config("i-de_usr"), password=config("i-de_pwd"))
     read_historical(iber, client)
     logger.info("Historical data read completed")
 

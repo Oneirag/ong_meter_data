@@ -3,15 +3,19 @@ ong_utils~=1.0.5
 ong_esios@git+https://github.com/Oneirag/ong_esios.git
 ong_tsdb@git+https://github.com/Oneirag/ong_tsdb.git
 urllib3~=2.3.0
-python-telegram-bot-raw[ujson]      # For notifications. DEPRECATED!
+# Not using telegram bot anymore
+#python-telegram-bot-raw[ujson]      # For notifications. DEPRECATED!
 numpy
 requests~=2.32.3
 schedule~=1.2.2
 
 # tenacity~=9.0.0
 # playwright~=1.50.0
-tinytuya~=1.16.3                # For accessing tuya devices directly (fails after some time)
-tuya-connector-python   # For accessing tuya devices from cloud
+
+# Not using tinytuya anymore
+#tinytuya~=1.16.3                # For accessing tuya devices directly (fails after some time)
+#tuya-connector-python   # For accessing tuya devices from cloud
+
 # to avoid problems with headless browser and i-de
 fake-useragent
 playwright

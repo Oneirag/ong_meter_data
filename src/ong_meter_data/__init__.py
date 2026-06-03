@@ -5,7 +5,7 @@ from ong_utils import OngTimer
 from functools import lru_cache
 import json
 
-__version__ = "0.2.01"
+__version__ = "0.2.2"
 
 timer = OngTimer(False)
 _util = OngConfig("ong_meter_data", cfg_filename="ong_config.yml")
