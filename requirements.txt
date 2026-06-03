@@ -21,4 +21,4 @@ fake-useragent
 playwright
 
 # External library for i-de
-git+https://github.com/Oneirag/python-oligo.git
+oligo@git+https://github.com/Oneirag/python-oligo.git
